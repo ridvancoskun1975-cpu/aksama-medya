@@ -1,0 +1,94 @@
+# Akşama Ne Var? günlük paylaşım (09:00 İstanbul).
+# Asıl başlatıcı: Google Apps Script "Akşama dış tetik" (08:15–08:45, workflow_dispatch). Aşağıdaki saat yalnız yedektir.
+# Kip: elle seçilmezse depo değişkeni PAYLASIM_KIPI (kontrol | prova | yayin; boşsa kontrol).
+# Gerçek paylaşım yalnız PAYLASIM_KIPI=yayin iken yapılır (Rıdvan'ın açık onayı).
+# Açık depo: günlüğe anahtar, menü ve açıklama yazılmaz. Değişiklik isteği (pull request) bu işi başlatamaz.
+name: Paylaşım
+run-name: "Paylaşım · ${{ github.event_name == 'schedule' && 'yedek saat' || inputs.kip || 'otomatik' }}${{ inputs.tarih && format(' · {0}', inputs.tarih) || '' }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      kip:
+        description: "otomatik = depo ayarı; kontrol = yalnız denetim; prova = paylaşmadan her şey; yayin = gerçek paylaşım"
+        type: choice
+        options: [otomatik, kontrol, prova, yayin]
+        default: otomatik
+      tarih:
+        description: "YYYY-AA-GG (boşsa bugün). Başka gün yalnız kontrol ve prova için."
+        type: string
+        required: false
+  schedule:
+    - cron: "40 5 * * *"   # 08:40 İstanbul, yedek
+
+permissions: {}
+
+concurrency:
+  group: paylasim
+  cancel-in-progress: false
+
+jobs:
+  paylas:
+    name: Paylaşım
+    if: github.repository == 'ridvancoskun1975-cpu/aksama-medya'
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    permissions:
+      contents: write     # kayıt etiketi paylasildi/<tarih>
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    outputs:
+      kip: ${{ steps.hazirla.outputs.kip }}
+      stok: ${{ steps.hazirla.outputs.stok }}
+    env:
+      IG_TOKEN: ${{ secrets.IG_TOKEN }}
+      BOT_OKUMA: ${{ secrets.BOT_OKUMA }}
+      KIP_GIRDI: ${{ inputs.kip || 'otomatik' }}
+      KIP_AYARI: ${{ vars.PAYLASIM_KIPI }}
+      YZ_ETIKETI: ${{ vars.YZ_ETIKETI }}
+      TARIH_GIRDI: ${{ inputs.tarih }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Hazırla (denetim, gün klasörü)
+        id: hazirla
+        timeout-minutes: 15
+        run: python3 paylas/paylas.py hazirla
+
+      - name: Kareleri Pages'e yükle
+        if: steps.hazirla.outputs.yayina_hazir == 'evet'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+          retention-days: 1
+
+      - name: Pages'e çıkar
+        id: dagit
+        if: steps.hazirla.outputs.yayina_hazir == 'evet'
+        timeout-minutes: 15
+        uses: actions/deploy-pages@v5
+
+      - name: Instagram (prova ya da paylaşım)
+        if: steps.hazirla.outputs.yayina_hazir == 'evet'
+        timeout-minutes: 175
+        env:
+          SAYFA_ADRESI: ${{ steps.dagit.outputs.page_url }}
+        run: python3 paylas/paylas.py yayinla
+
+  stok:
+    name: Hazır stok
+    needs: paylas
+    if: always() && needs.paylas.outputs.kip == 'yayin' && needs.paylas.outputs.stok != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - env:
+          STOK: ${{ needs.paylas.outputs.stok }}
+        run: |
+          echo "Hazır stok: $STOK gün"
+          if [ "$STOK" -lt 3 ]; then echo "::error::Hazır stok $STOK gün (3'ün altında). Yeni günler hazırlanıp onaylanmalı."; exit 1; fi
