@@ -155,7 +155,8 @@ import paylas  # noqa: E402
 
 IST = paylas.IST
 BUGUN = dt.date(2026, 11, 20)
-ACIKLAMA = "Bugün ne pişireyim? DENEME menüsü: çorba, ana yemek, yan yemek, tatlı.\n\nGİZLİ-MENÜ-METNİ\n\n#akşamanevar #bugünnepişireyim\n"
+ACIKLAMA = ("Bugün ne pişireyim? DENEME menüsü: çorba, ana yemek, yan yemek, tatlı.\n\nGİZLİ-MENÜ-METNİ\n\n"
+            "Görseller temsilidir, yapay zekâ ile hazırlanmıştır.\n\n#akşamanevar #bugünnepişireyim\n")
 
 
 class Saat:
@@ -254,7 +255,7 @@ class PaylasimDenemesi(unittest.TestCase):
         kaplar = [i for i in S.ig_yazmalari() if i[1].endswith("/media")]
         self.assertEqual(len(kaplar), 9)
         self.assertEqual(kaplar[-1][2]["caption"], ACIKLAMA.strip())
-        self.assertEqual(kaplar[-1][2]["is_ai_generated"], "true")
+        self.assertNotIn("is_ai_generated", kaplar[-1][2])        # Meta etiketi varsayılan kapalı
         self.assertEqual(len(kaplar[-1][2]["children"].split(",")), 8)
 
     def test_alt_metin_karelere_gider(self):
@@ -265,9 +266,14 @@ class PaylasimDenemesi(unittest.TestCase):
         gun_kur(BUGUN, alt=["eksik"])
         self.assertIn("alt_metinler", self.calistir(saat="20:00", ayar="prova"))
 
-    def test_yz_etiketi_kapatilabilir(self):
-        self.calistir(saat="20:00", ayar="prova", yz="hayir")
-        self.assertNotIn("is_ai_generated", S.ig_yazmalari()[-1][2])
+    def test_yz_etiketi_acilabilir(self):
+        self.calistir(saat="20:00", ayar="prova", yz="evet")
+        self.assertEqual(S.ig_yazmalari()[-1][2]["is_ai_generated"], "true")
+
+    def test_yz_satiri_yoksa_paylasmaz(self):
+        gun_kur(BUGUN, aciklama="Bugün ne pişireyim? Menü.\n\n#akşamanevar\n")
+        self.assertIn("YZ satırı yok", self.calistir(saat="08:20"))
+        self.assertEqual(S.ig_yazmalari(), [])
 
     def test_yayin_ayar_kapaliysa_provaya_duser(self):
         r = self.calistir(saat="20:00", girdi="yayin", ayar="prova")
@@ -374,7 +380,7 @@ class PaylasimDenemesi(unittest.TestCase):
         self.assertEqual(S.yayinlar(), [])
 
     def test_fazla_etiket_ve_kare(self):
-        gun_kur(BUGUN, aciklama="a #1 #2 #3 #4 #5 #6\n")
+        gun_kur(BUGUN, aciklama="a Görseller temsilidir, yapay zekâ ile hazırlanmıştır. #1 #2 #3 #4 #5 #6\n")
         self.assertIn("6 etiket", self.calistir(saat="20:00", ayar="kontrol"))
         gun_kur(BUGUN, kare=11)
         self.assertIn("kare sayısı 11", self.calistir(saat="20:00", ayar="kontrol"))

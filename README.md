@@ -11,7 +11,7 @@ Herkese açık depodur: yalnız paylaşım kodu durur. Menüler, tarifler ve sı
 1. Google Apps Script "Akşama dış tetik" 08:15–08:45 arasında işi başlatır (yedek: GitHub saatleri).
 2. `hazirla`: kip ve tarih; kayıt etiketi (kilit 1); anahtar ve hesap adı kilidi (`aksama.ne.var` değilse durur); günün klasörü; denetim (onay, içerik özeti, kare biçimi, açıklama, etiket sayısı).
 3. Kareler Pages'e çıkar; yayında olduğu denetlenir.
-4. `yayinla`: Instagram kapları (kare başına alt metin, gönderide YZ etiketi); 09:00 beklenir; Instagram'daki bugünkü gönderilere bakılır (kilit 2); paylaşılır; `paylasildi/<tarih>` etiketi yazılır.
+4. `yayinla`: Instagram kapları (kare başına alt metin); 09:00 beklenir; Instagram'daki bugünkü gönderilere bakılır (kilit 2); paylaşılır; `paylasildi/<tarih>` etiketi yazılır.
 
 Bir çalıştırmada geçici hatada 290 dakikaya kadar yeniden dener; sonra gün içi yedek saatler devralır. Paylaşım isteği belirsiz biterse önce gidip gitmediğine bakar, aynı gün iki kez paylaşmaz. Hata olursa iş kırmızı biter (GitHub e-postası).
 
@@ -32,9 +32,9 @@ Elle başlatırken "zaman" seçilebilir: `sabah` (paylaşım) ya da `aksam` (yar
 | `IG_TOKEN` | Secret | Meta "Aksama Ne Var" uygulamasının @aksama.ne.var anahtarı |
 | `BOT_OKUMA` | Secret | İnce GitHub anahtarı: yalnız `aksama-bot`, yalnız Contents: Read-only |
 | `PAYLASIM_KIPI` | Variable | `kontrol` / `prova` / `yayin` (gerçek paylaşım Rıdvan'ın onayıyla açılır) |
-| `YZ_ETIKETI` | Variable | Boş ya da `evet`: gönderiye Instagram "AI info" etiketi; `hayir`: etiket yok |
+| `YZ_ETIKETI` | Variable | Boş ya da `hayir`: Meta "AI info" etiketi yok (Rıdvan 13 Kas 20:56); `evet`: etiket konur. YZ açıklaması her durumda açıklamanın son satırında: "Görseller temsilidir, yapay zekâ ile hazırlanmıştır." Bu satır yoksa paylaşılmaz |
 | Pages | Ayar | Settings → Pages → Source: GitHub Actions |
 
 ## Deneme
 
-`python3 paylas/test_paylas.py -v` — sahte Instagram, sahte GitHub ve sahte saatle 40 durum (akşam hazırlığı dâhil) (Pillow gerekir). Gerçek hesaba bir şey gitmez.
+`python3 paylas/test_paylas.py -v` — sahte Instagram, sahte GitHub ve sahte saatle 41 durum (akşam hazırlığı ve YZ satırı dâhil) (Pillow gerekir). Gerçek hesaba bir şey gitmez.

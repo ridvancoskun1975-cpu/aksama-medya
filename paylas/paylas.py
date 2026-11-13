@@ -57,6 +57,9 @@ GEN, YUK = 1080, 1350
 KARE_EN_AZ, KARE_EN_COK = 2, 10
 ACIKLAMA_EN_COK = 2200
 ETIKET_EN_COK = 5
+# YZ açıklaması (Rıdvan 13 Kas 20:56 "evet"): Meta'nın "AI info" etiketi varsayılan kapalı; açıklamanın
+# son satırında bu cümle durur. YZ_ETIKETI=evet ise Meta etiketi de konur. Satır yoksa paylaşılmaz.
+YZ_SATIRI = "Görseller temsilidir, yapay zekâ ile hazırlanmıştır."
 KARE_BOYUT_EN_COK = 8 * 1024 * 1024
 
 KIPLER = ("kontrol", "prova", "yayin")
@@ -398,6 +401,8 @@ def gun_denetle(klasor, p, tarih, kip):
             sorun.append(f"açıklama {len(metin)} harf (sınır {ACIKLAMA_EN_COK})")
         if etiket_sayisi(metin) > ETIKET_EN_COK:
             sorun.append(f"{etiket_sayisi(metin)} etiket (en çok {ETIKET_EN_COK})")
+        if YZ_SATIRI not in metin:
+            sorun.append("açıklamada YZ satırı yok")
     alt = p.get("alt_metinler")
     if alt is not None and (not isinstance(alt, list) or len(alt) != len(kareler)):
         sorun.append("alt_metinler kare sayısıyla aynı uzunlukta olmalı")
@@ -669,7 +674,7 @@ def kap_kur(d, son_zaman):
         cocuklar.append(dayanikli("kare kabı", lambda prm=prm: graph("POST", f"{IG_ID}/media", prm)["id"], son_zaman))
     hazir_bekle(cocuklar, son_zaman)
     prm = {"media_type": "CAROUSEL", "children": ",".join(cocuklar), "caption": d["aciklama"]}
-    if (os.environ.get("YZ_ETIKETI") or "evet").strip().lower() != "hayir":
+    if (os.environ.get("YZ_ETIKETI") or "hayir").strip().lower() == "evet":
         prm["is_ai_generated"] = "true"
     kap = dayanikli("gönderi kabı", lambda: graph("POST", f"{IG_ID}/media", prm)["id"], son_zaman)
     hazir_bekle([kap], son_zaman)
