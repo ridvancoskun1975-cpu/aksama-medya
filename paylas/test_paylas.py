@@ -29,6 +29,7 @@ class Sahte:
         self.medya = []             # yayımlananlar
         self.istekler = []          # (yöntem, yol, parametreler)
         self.davranis = {}          # "publish" / "carousel" / "kare" -> [davranış, ...]
+        self.kap_durumu = {}        # kap -> status_code (varsayılan FINISHED)
         self.saat = None
         self.gunler = GECICI / "gunler"
         self.site = GECICI / "_site"
@@ -91,7 +92,7 @@ class Isleyici(http.server.BaseHTTPRequestHandler):
         if yol.endswith("/media"):
             return self.cevap(200, {"data": list(reversed(S.medya))})
         if yol in S.kaplar:
-            return self.cevap(200, {"status_code": "FINISHED", "status": "Finished: Media has been uploaded"})
+            return self.cevap(200, {"status_code": S.kap_durumu.get(yol, "FINISHED"), "status": "durum"})
         for m in S.medya:
             if m["id"] == yol:
                 return self.cevap(200, {"permalink": f"https://www.instagram.com/p/{yol}/", "timestamp": m["timestamp"]})
@@ -125,6 +126,8 @@ class Isleyici(http.server.BaseHTTPRequestHandler):
             d = S.sonraki("publish")
             if d == "500":
                 return self.hata(500, 2, gecici=True)
+            if d == "100":
+                return self.hata(400, 100, mesaj="Invalid parameter")
             kap = S.kaplar[q["creation_id"]]
             mid = f"medya{len(S.medya) + 1}"
             S.medya.append({"id": mid, "caption": kap.get("caption"), "media_type": "CAROUSEL_ALBUM",
@@ -196,18 +199,21 @@ class PaylasimDenemesi(unittest.TestCase):
         for i in range(4):
             gun_kur(BUGUN + dt.timedelta(days=i))
         self.etiketler = set()
+        self.kap_kayit = {}
         paylas.etiket_var = lambda t: paylas.etiket_adi(t) in self.etiketler
         paylas.etiket_koy = lambda t, m: self.etiketler.add(paylas.etiket_adi(t)) or True
+        paylas.kap_oku = lambda t: self.kap_kayit.get(t.isoformat())
+        paylas.kap_yaz = lambda t, k: self.kap_kayit.__setitem__(t.isoformat(), k) or True
 
-    def calistir(self, saat="08:20", girdi="otomatik", ayar="yayin", tarih="", yz=""):
+    def calistir(self, saat="08:20", girdi="otomatik", ayar="yayin", tarih="", yz="", asama="sabah", gun=BUGUN):
         h, m = map(int, saat.split(":"))
-        S.saat = Saat(dt.datetime.combine(BUGUN, dt.time(h, m), IST))
+        S.saat = Saat(dt.datetime.combine(gun, dt.time(h, m), IST))
         paylas.simdi = lambda: S.saat.t
         paylas.zaman = lambda: S.saat.mono
         paylas.uyu = S.saat.uyu
         cikti = GECICI / "runner" / "cikti.txt"
         cikti.write_text("")
-        os.environ.update({"KIP_GIRDI": girdi, "KIP_AYARI": ayar, "TARIH_GIRDI": tarih, "YZ_ETIKETI": yz,
+        os.environ.update({"KIP_GIRDI": girdi, "KIP_AYARI": ayar, "TARIH_GIRDI": tarih, "YZ_ETIKETI": yz, "ASAMA": asama,
                            "GITHUB_OUTPUT": str(cikti), "SAYFA_ADRESI": f"{ADRES}/pages/"})
         gunluk = io.StringIO()
         sonuc = "tamam"
@@ -388,9 +394,86 @@ class PaylasimDenemesi(unittest.TestCase):
         self.assertEqual(self.ciktilar["stok"], "1")
 
     # --- saat korumaları ---
-    def test_16dan_sonra_paylasmaz(self):
-        self.assertIn("16:00", self.calistir(saat="16:05"))
+    def test_gec_saatte_de_paylasir(self):
+        self.assertEqual(self.calistir(saat="16:05"), "tamam")
+        self.assertEqual(len(S.yayinlar()), 1)
+
+    def test_23ten_sonra_paylasmaz(self):
+        self.assertIn("23:00", self.calistir(saat="23:05"))
         self.assertEqual(S.ig_yazmalari(), [])
+
+    # --- akşam hazırlığı ---
+    def kap_yuklemeleri(self):
+        return [i for i in S.ig_yazmalari() if i[1].endswith("/media")]
+
+    def test_aksam_hazirlar_paylasmaz(self):
+        self.assertEqual(self.calistir(saat="20:00", asama="aksam"), "tamam")
+        self.assertEqual(self.ciktilar["tarih"], "2026-11-21")
+        self.assertEqual(len(self.kap_yuklemeleri()), 9)
+        self.assertEqual(S.yayinlar(), [])
+        self.assertIn("2026-11-21", self.kap_kayit)
+
+    def test_aksam_sonra_sabah_yalniz_paylasir(self):
+        self.calistir(saat="20:00", asama="aksam")
+        S.istekler.clear()
+        yarin = BUGUN + dt.timedelta(days=1)
+        self.assertEqual(self.calistir(saat="08:20", gun=yarin), "tamam")
+        self.assertEqual(self.ciktilar.get("pages_gerek"), "hayir")
+        self.assertEqual(self.kap_yuklemeleri(), [])          # kareler yeniden yüklenmedi
+        self.assertEqual(len(S.yayinlar()), 1)
+        self.assertEqual(S.medya[0]["timestamp"][11:16], "06:00")
+        self.assertIn("paylasildi/2026-11-21", self.etiketler)
+
+    def test_aksamdan_sonra_icerik_degisirse_yeniden_hazirlar(self):
+        self.calistir(saat="20:00", asama="aksam")
+        yarin = BUGUN + dt.timedelta(days=1)
+        gun_kur(yarin, aciklama=ACIKLAMA + "düzeltme\n")
+        S.istekler.clear()
+        self.assertEqual(self.calistir(saat="08:20", gun=yarin), "tamam")
+        self.assertEqual(len(self.kap_yuklemeleri()), 9)
+        self.assertEqual(len(S.yayinlar()), 1)
+        self.assertIn("düzeltme", S.medya[0]["caption"])
+
+    def test_kap_gecersizse_yeniden_hazirlar(self):
+        self.calistir(saat="20:00", asama="aksam")
+        S.kap_durumu[self.kap_kayit["2026-11-21"]["kap"]] = "EXPIRED"
+        S.istekler.clear()
+        self.assertEqual(self.calistir(saat="08:20", gun=BUGUN + dt.timedelta(days=1)), "tamam")
+        self.assertEqual(len(self.kap_yuklemeleri()), 9)
+        self.assertEqual(len(S.yayinlar()), 1)
+
+    def test_aksam_kontrol_kipinde_yazmaz(self):
+        self.assertEqual(self.calistir(saat="20:00", asama="aksam", ayar="kontrol"), "tamam")
+        self.assertEqual(S.ig_yazmalari(), [])
+        self.assertEqual(self.kap_kayit, {})
+
+    def test_aksam_gun_yoksa_kirmizi(self):
+        shutil.rmtree(S.gunler / (BUGUN + dt.timedelta(days=1)).isoformat())
+        self.assertIn("paylaşılacak gün yok", self.calistir(saat="20:00", asama="aksam"))
+
+    def test_aksam_prova_onayli_gun_yayinda_kirmizi(self):
+        gun_kur(BUGUN + dt.timedelta(days=1), yalniz_prova=True)
+        self.assertIn("yalnız prova", self.calistir(saat="20:00", asama="aksam"))
+        self.assertEqual(S.ig_yazmalari(), [])
+
+    def test_aksam_paylasilmis_gunu_hazirlamaz(self):
+        self.etiketler.add("paylasildi/2026-11-21")
+        self.assertEqual(self.calistir(saat="20:00", asama="aksam")[:5], "bitti")
+        self.assertEqual(S.ig_yazmalari(), [])
+
+    def test_sabah_basarisizsa_gun_ici_deneme_ayni_kabi_kullanir(self):
+        S.davranis["publish"] = ["100"]
+        self.assertIn("Paylaşılamadı", self.calistir(saat="08:20"))
+        self.assertEqual(S.medya, [])
+        S.istekler.clear()
+        self.assertEqual(self.calistir(saat="11:40"), "tamam")   # 11:40 yedek saati
+        self.assertEqual(self.kap_yuklemeleri(), [])
+        self.assertEqual(len(S.medya), 1)
+
+    def test_prova_aksam_ve_sabah_paylasmaz(self):
+        self.calistir(saat="20:00", asama="aksam", ayar="prova")
+        self.assertEqual(self.calistir(saat="08:15", ayar="prova", gun=BUGUN + dt.timedelta(days=1)), "tamam")
+        self.assertEqual(S.yayinlar(), [])
 
     def test_erken_yayin_baslamaz(self):
         self.assertIn("07:30", self.calistir(saat="06:00"))

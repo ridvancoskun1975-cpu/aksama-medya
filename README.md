@@ -6,12 +6,14 @@ Herkese açık depodur: yalnız paylaşım kodu durur. Menüler, tarifler ve sı
 
 ## Nasıl çalışır
 
-1. Google Apps Script "Akşama dış tetik" 08:15–08:45 arasında işi başlatır (yedek: GitHub saati 08:40).
+**Kesintisiz paylaşım (13 Kas 2026):** her akşam 20:00'de yarının gönderisi Instagram'a yüklenir ama paylaşılmaz; kimliği `kap/<tarih>` etiketine yazılır. Sorun varsa akşamdan görülür. Sabah iş bu hazır gönderiyi yalnız paylaşır; içerik akşamdan sonra değiştiyse ya da hazırlık yoksa her şeyi sabah yapar. Paylaşılana kadar gün içinde 08:40, 11:40, 14:40 ve 17:40'ta yeniden denenir; 23:00'e kadar paylaşır.
+
+1. Google Apps Script "Akşama dış tetik" 08:15–08:45 arasında işi başlatır (yedek: GitHub saatleri).
 2. `hazirla`: kip ve tarih; kayıt etiketi (kilit 1); anahtar ve hesap adı kilidi (`aksama.ne.var` değilse durur); günün klasörü; denetim (onay, içerik özeti, kare biçimi, açıklama, etiket sayısı).
 3. Kareler Pages'e çıkar; yayında olduğu denetlenir.
 4. `yayinla`: Instagram kapları (kare başına alt metin, gönderide YZ etiketi); 09:00 beklenir; Instagram'daki bugünkü gönderilere bakılır (kilit 2); paylaşılır; `paylasildi/<tarih>` etiketi yazılır.
 
-Geçici hatada 150 dakikaya kadar yeniden dener; paylaşım isteği belirsiz biterse önce gidip gitmediğine bakar, aynı gün iki kez paylaşmaz. 16:00'dan sonra paylaşmaz. Hata olursa iş kırmızı biter (GitHub e-postası).
+Bir çalıştırmada geçici hatada 290 dakikaya kadar yeniden dener; sonra gün içi yedek saatler devralır. Paylaşım isteği belirsiz biterse önce gidip gitmediğine bakar, aynı gün iki kez paylaşmaz. Hata olursa iş kırmızı biter (GitHub e-postası).
 
 ## Kipler
 
@@ -21,7 +23,7 @@ Geçici hatada 150 dakikaya kadar yeniden dener; paylaşım isteği belirsiz bit
 | `prova` | Paylaşım dışında her şey: kareler Pages'e çıkar, Instagram kapları hazırlanır, **paylaşılmaz** (kap 24 saatte silinir). |
 | `yayin` | Gerçek paylaşım. Yalnız `PAYLASIM_KIPI=yayin` iken. |
 
-Elle başlatırken kip seçilmezse (`otomatik`) depo değişkeni `PAYLASIM_KIPI` geçer; boşsa `kontrol`. 08:00–09:20 arasında elle kontrol ve prova yapılmaz.
+Elle başlatırken "zaman" seçilebilir: `sabah` (paylaşım) ya da `aksam` (yarının hazırlığı, paylaşmaz). Kip seçilmezse (`otomatik`) depo değişkeni `PAYLASIM_KIPI` geçer; boşsa `kontrol`. 08:00–09:20 arasında elle kontrol ve prova yapılmaz.
 
 ## Ayarlar (Settings)
 
@@ -35,4 +37,4 @@ Elle başlatırken kip seçilmezse (`otomatik`) depo değişkeni `PAYLASIM_KIPI`
 
 ## Deneme
 
-`python3 paylas/test_paylas.py -v` — sahte Instagram, sahte GitHub ve sahte saatle 29 durum (Pillow gerekir). Gerçek hesaba bir şey gitmez.
+`python3 paylas/test_paylas.py -v` — sahte Instagram, sahte GitHub ve sahte saatle 40 durum (akşam hazırlığı dâhil) (Pillow gerekir). Gerçek hesaba bir şey gitmez.

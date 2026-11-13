@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """Akşama Ne Var? (@aksama.ne.var) günlük paylaşım işi. Yalnız standart kütüphane.
 
+İki aşama (Rıdvan 13 Kas 20:43, "kesintisiz paylaşım" için "kur"):
+  akşam   20:00'de yarının gönderisi Instagram'a yüklenir (kap), kimliği `kap/<tarih>` etiketine yazılır;
+          paylaşılmaz. Sorun varsa akşamdan görülür (iş kırmızı biter).
+  sabah   akşamdan hazırlanmış kap varsa ve içerik değişmediyse yalnız paylaşılır; yoksa her şey sabah yapılır.
+          Gün içinde birkaç kez yeniden başlatılır; paylaşılana kadar dener (16:00 sınırı kaldırıldı).
+
 İki adım (iş akışı .github/workflows/paylas.yml):
   hazirla  kip ve tarih; kilitler; anahtar ve hesap denetimi; özel depodan (aksama-bot) yalnız günün klasörü;
            paylaşım denetimi (onay, özet, kare, açıklama); Pages için _site klasörü.
@@ -40,9 +46,9 @@ GITHUB_API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 IST = dt.timezone(dt.timedelta(hours=3))    # Türkiye'de yaz saati yok
 SAAT_HEDEF = dt.time(9, 0)                  # paylaşım saati
 SAAT_ERKEN = dt.time(7, 30)                 # yayin bundan önce başlamaz
-SAAT_SON = dt.time(16, 0)                   # bundan sonra o günün menüsü paylaşılmaz (Claude önerisi)
+SAAT_SON = dt.time(23, 0)                   # gün boyu dener; 23:00'ten sonra o günün menüsü artık paylaşılmaz
 YASAK = (dt.time(8, 0), dt.time(9, 20))     # bu arada elle kontrol/prova yapılmaz (09:00 korunur)
-DENEME_SURESI = 150 * 60                    # geçici hatada en çok 150 dk yeniden dener (yayın öncesi)
+DENEME_SURESI = 290 * 60                    # bir çalıştırmada geçici hatada en çok 290 dk dener (GitHub işi en çok 6 saat)
 YAYINDA_SURESI = 15 * 60                    # kareler en çok 15 dk içinde Pages'te görünmeli
 STOK_BAKIS = 14                             # stok için bakılan gün sayısı
 
@@ -211,6 +217,46 @@ def etiket_koy(tarih, mesaj):
         uyari(f"Kayıt etiketi yazılamadı (deneme {i + 1}): {(b.stderr or a.stderr).strip()[:200]}")
         uyu(10)
     return False
+
+
+# ---------- Akşamdan hazırlanan kap (kap/<tarih> etiketi) ----------
+def kap_oku(tarih):
+    """Akşam hazırlığının kaydı: {"kap", "ozet", "zaman"} ya da None."""
+    ad = f"kap/{tarih.isoformat()}"
+    try:
+        r = subprocess.run(["git", "ls-remote", "--tags", "origin", f"refs/tags/{ad}"],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode != 0 or not r.stdout.strip():
+            return None
+        subprocess.run(["git", "fetch", "--no-tags", "--depth=1", "origin", f"+refs/tags/{ad}:refs/tags/{ad}"],
+                       capture_output=True, text=True, timeout=120, check=True)
+        m = subprocess.run(["git", "tag", "-l", "--format=%(contents)", ad], capture_output=True, text=True, check=True)
+        return json.loads(m.stdout.strip())
+    except Exception as e:
+        uyari(f"Akşam hazırlığının kaydı okunamadı: {str(e)[:120]}")
+        return None
+
+
+def kap_yaz(tarih, kayit):
+    ad = f"kap/{tarih.isoformat()}"
+    for i in range(3):
+        a = subprocess.run(["git", "-c", "user.name=aksama-paylasim", "-c", "user.email=aksama-paylasim@users.noreply.github.com",
+                            "tag", "-f", "-a", ad, "-m", json.dumps(kayit)], capture_output=True, text=True)
+        b = subprocess.run(["git", "push", "-f", "origin", f"refs/tags/{ad}"], capture_output=True, text=True, timeout=120)
+        if a.returncode == 0 and b.returncode == 0:
+            return True
+        uyari(f"Hazırlık kaydı yazılamadı (deneme {i + 1}): {(b.stderr or a.stderr).strip()[:200]}")
+        uyu(10)
+    return False
+
+
+def kap_hazir_mi(kap):
+    try:
+        s = graph("GET", kap, {"fields": "status_code"})
+    except GraphHatasi as e:
+        uyari(f"Akşam hazırlığı okunamadı: {e.kisa()}")
+        return False
+    return s.get("status_code") == "FINISHED"
 
 
 # ---------- Instagram'da bugün paylaşılmış mı (kilit 2) ----------
@@ -428,8 +474,16 @@ def pay_denetle():
         raise Dur("Instagram'ın 24 saatlik paylaşım payı dolu.")
 
 
+def asama_belirle():
+    a = (os.environ.get("ASAMA") or "sabah").strip().lower()
+    if a not in ("sabah", "aksam"):
+        raise Dur(f"Bilinmeyen aşama: {a}")
+    return a
+
+
 def hazirla():
     kip, girdi = kip_belirle()
+    asama = asama_belirle()
     an = simdi()
     bugun = an.date()
     t_girdi = (os.environ.get("TARIH_GIRDI") or "").strip()
@@ -437,24 +491,28 @@ def hazirla():
         if not TARIH_KALIBI.match(t_girdi):
             raise Dur("Tarih YYYY-AA-GG olmalı.")
         tarih = dt.date.fromisoformat(t_girdi)
-        if kip == "yayin" and tarih != bugun:
-            raise Dur("Yalnız bugünün menüsü paylaşılır; başka tarih yalnız kontrol ve prova içindir.")
+        if kip == "yayin" and asama == "sabah" and tarih != bugun:
+            raise Dur("Yalnız bugünün menüsü paylaşılır; başka tarih yalnız kontrol, prova ve akşam hazırlığı içindir.")
     else:
-        tarih = bugun
+        tarih = bugun + dt.timedelta(days=1) if asama == "aksam" else bugun
     cikti("kip", kip)
+    cikti("asama", asama)
     cikti("tarih", tarih.isoformat())
-    ozet(f"### Paylaşım · {tarih.isoformat()} · kip: {kip}")
+    ozet(f"### Paylaşım · {tarih.isoformat()} · {'akşam hazırlığı' if asama == 'aksam' else 'sabah'} · kip: {kip}")
     bilgi(f"Saat (İstanbul): {an.strftime('%H:%M')}")
 
     if girdi != "otomatik" and kip != "yayin" and YASAK[0] <= an.time() < YASAK[1]:
         raise Bitti("08:00–09:20 arasında elle kontrol ve prova yapılmaz (09:00 paylaşımı korunur).")
-    if kip == "yayin":
+    if asama == "aksam":
+        if etiket_var(tarih):
+            raise Bitti(f"{tarih} gönderisi zaten paylaşılmış; hazırlık gerekmiyor.")
+    elif kip == "yayin":
         if an.time() < SAAT_ERKEN:
             raise Dur(f"Paylaşım {SAAT_ERKEN:%H:%M}'dan önce başlatılmaz.")
-        if an.time() >= SAAT_SON:
-            raise Dur(f"Saat {SAAT_SON:%H:%M}'ı geçti; bugünün menüsü paylaşılmadı. Elle bakılmalı.")
         if etiket_var(tarih):
             raise Bitti("Bugünün gönderisi zaten paylaşılmış (kayıt etiketi var).")
+        if an.time() >= SAAT_SON:
+            raise Dur(f"Saat {SAAT_SON:%H:%M}'ı geçti; bugünün menüsü paylaşılmadı. Elle bakılmalı.")
     elif etiket_var(tarih):
         bilgi("Not: bu tarihin kayıt etiketi var (paylaşılmış).")
 
@@ -493,6 +551,23 @@ def hazirla():
         cikti("yayina_hazir", "hayir")
         return
 
+    durum = {"tarih": tarih.isoformat(), "kip": kip, "asama": asama, "aciklama": aciklama,
+             "alt_metinler": p.get("alt_metinler"), "ozet": p["ozet"]}
+
+    # Sabah: akşamdan hazırlanmış kap varsa ve içerik aynıysa yalnız paylaşılır
+    if asama == "sabah":
+        kayit = kap_oku(tarih)
+        if kayit and kayit.get("ozet") == p["ozet"] and kap_hazir_mi(kayit.get("kap", "")):
+            bilgi("Akşamdan hazırlanmış gönderi bulundu ve hazır; kareler yeniden yüklenmeyecek.")
+            DURUM.write_text(json.dumps({**durum, "kap": kayit["kap"]}, ensure_ascii=False), encoding="utf-8")
+            cikti("pages_gerek", "hayir")
+            cikti("yayina_hazir", "evet")
+            return
+        if kayit:
+            uyari("Akşam hazırlığı kullanılamadı (içerik değişmiş ya da kap geçersiz); gönderi şimdi hazırlanıyor.")
+        elif kip == "yayin":
+            uyari("Akşam hazırlığı yok; gönderi şimdi hazırlanıyor.")
+
     # Pages: yalnız bugünün kareleri, tahmin edilemez bir klasörde (01.jpg, 02.jpg ...)
     shutil.rmtree(SITE, ignore_errors=True)
     gizli = secrets.token_hex(12)
@@ -504,8 +579,8 @@ def hazirla():
         ad = f"{i:02d}.jpg"
         shutil.copyfile(klasor / k, SITE / gizli / ad)
         dosyalar.append({"ad": ad, "boyut": (klasor / k).stat().st_size})
-    DURUM.write_text(json.dumps({"tarih": tarih.isoformat(), "kip": kip, "gizli": gizli, "dosyalar": dosyalar,
-                                 "aciklama": aciklama, "alt_metinler": p.get("alt_metinler")}, ensure_ascii=False), encoding="utf-8")
+    DURUM.write_text(json.dumps({**durum, "gizli": gizli, "dosyalar": dosyalar}, ensure_ascii=False), encoding="utf-8")
+    cikti("pages_gerek", "evet")
     cikti("yayina_hazir", "evet")
 
 
@@ -580,16 +655,13 @@ def paylas_dayanikli(kap, tarih, ilk, son_zaman):
             return {"id": var, "_onceden": True}
 
 
-def yayinla():
-    d = json.loads(DURUM.read_text(encoding="utf-8"))
-    tarih, kip = dt.date.fromisoformat(d["tarih"]), d["kip"]
+def kap_kur(d, son_zaman):
+    """Kareleri Pages'ten Instagram'a yükler, gönderi kabını kurar. Döner: (kap, kare sayısı)."""
     taban = (os.environ.get("SAYFA_ADRESI") or "").rstrip("/")
     if not taban:
         raise Dur("Pages adresi yok (deploy-pages çıktısı).")
     adresler = [f"{taban}/{d['gizli']}/{f['ad']}" for f in d["dosyalar"]]
     yayinda_mi(adresler, [f["boyut"] for f in d["dosyalar"]])
-
-    son_zaman = zaman() + DENEME_SURESI
     alt = d.get("alt_metinler") or [None] * len(adresler)
     cocuklar = []
     for adres, a in zip(adresler, alt):
@@ -602,10 +674,28 @@ def yayinla():
     kap = dayanikli("gönderi kabı", lambda: graph("POST", f"{IG_ID}/media", prm)["id"], son_zaman)
     hazir_bekle([kap], son_zaman)
     bilgi(f"Instagram kapları hazır: {len(cocuklar)} kare + gönderi" + (" (YZ etiketi açık)" if "is_ai_generated" in prm else ""))
+    return kap, len(cocuklar)
 
+
+def yayinla():
+    d = json.loads(DURUM.read_text(encoding="utf-8"))
+    tarih, kip, asama = dt.date.fromisoformat(d["tarih"]), d["kip"], d.get("asama", "sabah")
+    son_zaman = zaman() + DENEME_SURESI
+    if d.get("kap"):
+        kap, n = d["kap"], None
+    else:
+        kap, n = kap_kur(d, son_zaman)
+        if not kap_yaz(tarih, {"kap": kap, "ozet": d["ozet"], "zaman": simdi().isoformat(timespec="minutes")}):
+            uyari("Hazırlık kaydı yazılamadı; sonraki çalıştırma gönderiyi yeniden hazırlar.")
+
+    if asama == "aksam":
+        ozet(f"Akşam hazırlığı tamam: {tarih} gönderisi Instagram'a yüklendi ({n} kare), **paylaşılmadı**. "
+             + ("Sabah 09:00'da paylaşılacak." if kip == "yayin" else "Kip prova: sabah da paylaşılmaz.")
+             + " (Kap 24 saat geçerli.)")
+        return
     if kip == "prova":
-        ozet(f"Prova tamam: {len(cocuklar)} kare Pages'ten Instagram'a yüklendi, gönderi hazır; **paylaşılmadı** "
-             "(kap 24 saatte kendiliğinden silinir).")
+        ozet(f"Prova tamam: gönderi Instagram'da hazır{f' ({n} kare Pages’ten yüklendi)' if n else ' (akşamdan hazırlanmış)'}; "
+             "**paylaşılmadı** (kap 24 saatte kendiliğinden silinir).")
         return
 
     hedefi_bekle(tarih)
