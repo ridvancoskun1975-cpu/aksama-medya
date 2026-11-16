@@ -60,6 +60,8 @@ ETIKET_EN_COK = 5
 # YZ açıklaması (Rıdvan 13 Kas 20:56 "evet"): Meta'nın "AI info" etiketi varsayılan kapalı; açıklamanın
 # son satırında bu cümle durur. YZ_ETIKETI=evet ise Meta etiketi de konur. Satır yoksa paylaşılmaz.
 YZ_SATIRI = "Görseller temsilidir, yapay zekâ ile hazırlanmıştır."
+# Telif satırı (iş 50; Rıdvan 13 Kas 15:22, 15:38): açıklamanın sonunda, YZ satırının altında. Yoksa paylaşılmaz.
+TELIF_SATIRI = "Bu içerik Akşama Ne Var?™ sayfasına aittir. İzinsiz kopyalanamaz, başka sayfada yayımlanamaz."
 KARE_BOYUT_EN_COK = 8 * 1024 * 1024
 
 KIPLER = ("kontrol", "prova", "yayin")
@@ -403,6 +405,8 @@ def gun_denetle(klasor, p, tarih, kip):
             sorun.append(f"{etiket_sayisi(metin)} etiket (en çok {ETIKET_EN_COK})")
         if YZ_SATIRI not in metin:
             sorun.append("açıklamada YZ satırı yok")
+        if TELIF_SATIRI not in metin:
+            sorun.append("açıklamada telif satırı yok")
     alt = p.get("alt_metinler")
     if alt is not None and (not isinstance(alt, list) or len(alt) != len(kareler)):
         sorun.append("alt_metinler kare sayısıyla aynı uzunlukta olmalı")

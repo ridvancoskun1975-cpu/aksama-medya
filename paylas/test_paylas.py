@@ -156,7 +156,9 @@ import paylas  # noqa: E402
 IST = paylas.IST
 BUGUN = dt.date(2026, 11, 20)
 ACIKLAMA = ("Bugün ne pişireyim? DENEME menüsü: çorba, ana yemek, yan yemek, tatlı.\n\nGİZLİ-MENÜ-METNİ\n\n"
-            "Görseller temsilidir, yapay zekâ ile hazırlanmıştır.\n\n#akşamanevar #bugünnepişireyim\n")
+            "Görseller temsilidir, yapay zekâ ile hazırlanmıştır.\n"
+            "Bu içerik Akşama Ne Var?™ sayfasına aittir. İzinsiz kopyalanamaz, başka sayfada yayımlanamaz.\n\n"
+            "#akşamanevar #bugünnepişireyim\n")
 
 
 class Saat:
@@ -273,6 +275,11 @@ class PaylasimDenemesi(unittest.TestCase):
     def test_yz_satiri_yoksa_paylasmaz(self):
         gun_kur(BUGUN, aciklama="Bugün ne pişireyim? Menü.\n\n#akşamanevar\n")
         self.assertIn("YZ satırı yok", self.calistir(saat="08:20"))
+        self.assertEqual(S.ig_yazmalari(), [])
+
+    def test_telif_satiri_yoksa_paylasmaz(self):
+        gun_kur(BUGUN, aciklama="Bugün ne pişirsem? Menü.\n\nGörseller temsilidir, yapay zekâ ile hazırlanmıştır.\n\n#akşamanevar\n")
+        self.assertIn("telif satırı yok", self.calistir(saat="08:20"))
         self.assertEqual(S.ig_yazmalari(), [])
 
     def test_yayin_ayar_kapaliysa_provaya_duser(self):
