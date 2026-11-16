@@ -1,8 +1,9 @@
-# Günlük reel videosu (Rıdvan 17 Kas 01:37: "Edits için müzik hariç bitmiş video yeterli. Çok uğraşamam").
-# Bugünün gönderisi paylaşıldıktan sonra (kayıt etiketi paylasildi/<bugün>) günün videosu üretilir ve
-# sabit adrese konur: https://ridvancoskun1975-cpu.github.io/aksama-medya/reel/ (video: /reel.mp4).
-# Rıdvan telefondan indirir, Edits'te isterse müzik ekleyip paylaşır. Akşam 20:00 hazırlığı Pages'i
-# yeniden kurunca video kalkar. Instagram'a kendiliğinden reel paylaşımı YOK (Rıdvan'ın onayı olmadan açılmaz).
+# Günlük reel (Rıdvan 17 Kas 01:54: "Ben uğraşmak istemiyorum, sen yap." · "Edits iptal";
+# 01:57: "Reels sen gönder. Takipçi kazanma odaklı. Hashtagler dikkat!!").
+# Bugünün onaylı gönderisi paylaşıldıktan sonra (kayıt etiketi paylasildi/<bugün>) aynı menüden video üretilir,
+# Pages'e konur (https://ridvancoskun1975-cpu.github.io/aksama-medya/reel/ , video /reel.mp4) ve Instagram'a
+# reel olarak kendiliğinden paylaşılır. Kilitler: reel/<tarih> etiketi + Instagram'daki son paylaşımlar.
+# Müzik Graph API ile eklenemez; video müziksiz gider. Kapatma: paylas/reel.py INSTAGRAMA_PAYLAS = False.
 # Paylaşım işinden ayrı: bu iş bozulsa da 09:00 gönderisi etkilenmez.
 # Açık depo: günlüğe menü ve açıklama yazılmaz.
 name: Reel
@@ -15,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       kip:
-        description: "prova = video ve sayfa yayımlanır, kayıt etiketi yazılmaz; yayin = etiket de yazılır"
+        description: "prova = video Pages'e konur, Instagram kabı kurulur ama paylaşılmaz; yayin = reel paylaşılır"
         type: choice
         options: [prova, yayin]
         default: prova
@@ -35,7 +36,7 @@ jobs:
     name: Reel
     if: github.repository == 'ridvancoskun1975-cpu/aksama-medya'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 75
     permissions:
       contents: write     # kayıt etiketi reel/<tarih>
       pages: write
@@ -106,12 +107,19 @@ jobs:
         timeout-minutes: 10
         uses: actions/deploy-pages@v5
 
-      - name: Kayıt etiketi
-        if: steps.gerek.outputs.gerek == 'evet' && steps.gerek.outputs.kip == 'yayin'
-        run: python3 paylas/reel.py etiket "${{ steps.gerek.outputs.tarih }}"
+      - name: Instagram'a reel
+        if: steps.gerek.outputs.gerek == 'evet'
+        timeout-minutes: 55
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          YZ_ETIKETI: ${{ vars.YZ_ETIKETI }}
+          KIP: ${{ steps.gerek.outputs.kip }}
+          SAYFA_ADRESI: ${{ steps.dagit.outputs.page_url }}
+          TARIH: ${{ steps.gerek.outputs.tarih }}
+        run: python3 paylas/reel.py paylas "$TARIH" "bot/gunler/$TARIH" _site/reel.mp4
 
       - name: Adres
-        if: steps.gerek.outputs.gerek == 'evet'
+        if: always() && steps.gerek.outputs.gerek == 'evet'
         env:
           ADRES: ${{ steps.dagit.outputs.page_url }}
         run: |

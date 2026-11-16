@@ -1,13 +1,15 @@
-"""Günlük reel videosu için yardımcı (iş akışı: .github/workflows/reel.yml).
+"""Günlük reel: video üretilir, Pages'e konur ve Instagram'a kendiliğinden paylaşılır (iş akışı: .github/workflows/reel.yml).
 
 Rıdvan 17 Kas 01:37: "Edits için müzik hariç bitmiş video yeterli. Çok uğraşamam"
+Rıdvan 17 Kas 01:54: "Ben uğraşmak istemiyorum, sen yap." · "Edits iptal"
 
-  python3 paylas/reel.py gerek     bugünün gönderisi paylaşıldı mı, reel yapılmış mı, saat uygun mu
-  python3 paylas/reel.py sayfa     _site/reel/index.html: video, indirme düğmesi, kopyalanacak açıklama
-  python3 paylas/reel.py etiket    reel/<tarih> kayıt etiketini yazar
+  python3 paylas/reel.py gerek                          bugünün gönderisi paylaşıldı mı, reel paylaşılmış mı, saat uygun mu
+  python3 paylas/reel.py sayfa <gün klasörü>            _site/reel/index.html (video ve açıklama; yedek)
+  python3 paylas/reel.py paylas <tarih> <gün> <video>   Instagram'a reel (kip prova: kap kurulur, paylaşılmaz)
 
-Açık depo: günlüğe menü ve açıklama yazılmaz. Video ve sayfa yalnız o günün gönderisi paylaşıldıktan
-sonra yayımlanır (sıradaki günlerin içeriği önceden görünmez).
+Reel yalnız o günün onaylı gönderisi paylaşıldıktan sonra (etiket paylasildi/<tarih>) ve aynı menüden üretilir.
+Kilitler: kayıt etiketi reel/<tarih> ve Instagram'daki son paylaşımlar (aynı gün, aynı ilk satır) — aynı reel iki kez gitmez.
+Açık depo: günlüğe menü ve açıklama yazılmaz. Müzik Graph API ile eklenemez; video müziksiz gider.
 """
 import datetime as dt
 import html
@@ -15,8 +17,13 @@ import json
 import os
 import pathlib
 import re
+import secrets
 import subprocess
 import sys
+import urllib.request
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import paylas as P  # noqa: E402  (Graph API yardımcıları, kilitler, süreler)
 
 IST = dt.timezone(dt.timedelta(hours=3))
 OTO_ARALIK = (dt.time(8, 30), dt.time(19, 30))   # akşam 20:00 hazırlığının Pages'ini ezmesin
@@ -24,7 +31,17 @@ YASAK = (dt.time(8, 0), dt.time(9, 20))           # elle deneme yok (09:00 korun
 SITE = pathlib.Path(os.environ.get("SITE_KLASORU", "_site"))
 YZ_SATIRI = "Görseller temsilidir, yapay zekâ ile hazırlanmıştır."
 TELIF_SATIRI = "Bu içerik Akşama Ne Var?™ sayfasına aittir. İzinsiz kopyalanamaz, başka sayfada yayımlanamaz."
-ETIKETLER = "#akşamanevar #bugünnepişirsem #akşamyemeği #evyemekleri #menü"
+# Hashtag (Rıdvan 17 Kas 01:57: "Takipçi kazanma odaklı. Hashtagler dikkat!!"): Instagram en çok 5 izin veriyor
+# (Aralık 2025). Konuya uyan, aranan etiketler; genel ya da ilgisiz etiket yok. Türkçe harfsiz yazılanlar
+# (#yemektarifleri, #evyemekleri, #kolaytarifler) tek biçimli; günün ana yemeği kendi adıyla; sonda sayfanın etiketi.
+SABIT_ETIKETLER = ["#yemektarifleri", "#evyemekleri", "#kolaytarifler"]
+MARKA_ETIKETI = "#akşamanevar"
+ETIKET_EN_COK = 5
+INSTAGRAMA_PAYLAS = True        # False: video yalnız Pages'e konur (kapatma anahtarı; Claude depodan değiştirir)
+REEL_DENEME = 40 * 60           # geçici hatada en çok 40 dk dener
+VIDEO_BEKLE = 15 * 60           # video en çok 15 dk içinde Pages'te görünmeli
+ISLEM_BEKLE = 15 * 60           # Instagram'ın videoyu işlemesi en çok 15 dk
+KAPAK_ANI_MS = 1500             # kapak karesi: girişteki "Bugün akşama ne pişirsem?" ekranı
 
 
 def cikti(ad, deger):
@@ -71,18 +88,41 @@ def gerek():
         ozet(f"{tarih} gönderisi henüz paylaşılmadı; reel o gün paylaşımdan sonra yapılır.")
         return cikti("gerek", "hayir")
     if kip == "yayin" and etiket_var(f"reel/{tarih}"):
-        ozet(f"{tarih} reel'i zaten hazır.")
+        ozet(f"{tarih} reel'i zaten paylaşılmış.")
         return cikti("gerek", "hayir")
     ozet(f"Reel hazırlanacak: {tarih} (kip: {kip}).")
     cikti("gerek", "evet")
 
 
+def kucuk(metin):
+    return metin.replace("I", "ı").replace("İ", "i").lower()
+
+
+def yemek_etiketi(ad):
+    ad = re.sub(r"\(.*?\)", "", ad)
+    return "#" + "".join(h for h in kucuk(ad) if h.isalpha())
+
+
+def etiketler(g):
+    ana = next((y["ad"] for y in g["yemekler"] if y.get("tur") == "Ana yemek"), None)
+    liste = list(SABIT_ETIKETLER)
+    if ana and yemek_etiketi(ana) not in liste and len(yemek_etiketi(ana)) > 3:
+        liste.append(yemek_etiketi(ana))
+    liste.append(MARKA_ETIKETI)
+    liste = list(dict.fromkeys(liste))[:ETIKET_EN_COK]
+    return " ".join(liste)
+
+
 def aciklama(g):
     adlar = ", ".join(y["ad"] for y in g["yemekler"])
-    satir = [f"Bugün akşama ne var? {adlar}.",
-             "Tarifler ve alışveriş listesi profildeki gönderide. Kaydedin, akşam elinizin altında olsun.",
-             "", YZ_SATIRI, TELIF_SATIRI, "", ETIKETLER]
-    return "\n".join(satir)
+    satir = [f"Bugün akşama ne pişirsem? Menü hazır: {adlar}.",
+             "Her sabah 09:00'da yeni akşam yemeği menüsü için @aksama.ne.var'ı takip edin.",
+             "Tarifler ve alışveriş listesi profildeki gönderide; kaydedin, akşam elinizin altında olsun.",
+             "", YZ_SATIRI, TELIF_SATIRI, "", etiketler(g)]
+    metin = "\n".join(satir)
+    if len(re.findall(r"#\w+", metin)) > ETIKET_EN_COK or len(metin) > 2200:
+        raise P.Dur("Reel açıklaması sınırı aşıyor (en çok 5 etiket, 2200 harf).")
+    return metin
 
 
 def sayfa():
@@ -107,8 +147,7 @@ ol{{padding-left:22px}} li{{margin:6px 0}}
 <h1>Bugünün reel'i</h1><p>{html.escape(g['tarih_yazi'])}</p>
 <video src="../reel.mp4" controls playsinline preload="metadata"></video>
 <a class="dugme" href="../reel.mp4" download="aksama-reel-{gun.name}.mp4">1. Videoyu indir</a>
-<ol><li>Edits'i açın, indirdiğiniz videoyu seçin.</li><li>İsterseniz müzik ekleyin.</li>
-<li>Instagram'da paylaşırken aşağıdaki açıklamayı yapıştırın.</li></ol>
+<p>Bu video Instagram'a kendiliğinden paylaşılır; sizin bir şey yapmanız gerekmez. Sayfa yalnız yedektir.</p>
 <textarea id="t" readonly>{html.escape(metin)}</textarea>
 <button onclick="navigator.clipboard.writeText(document.getElementById('t').value).then(()=>{{this.textContent='Kopyalandı'}})">2. Açıklamayı kopyala</button>
 <p style="font-size:16px">Video akşam 20:00'ye kadar burada durur.</p>
@@ -117,17 +156,150 @@ ol{{padding-left:22px}} li{{margin:6px 0}}
     ozet("Sayfa hazır.")
 
 
-def etiket():
-    tarih = sys.argv[2]
+def etiket_yaz(tarih, mesaj):
     ad = f"reel/{tarih}"
-    a = subprocess.run(["git", "-c", "user.name=aksama-paylasim", "-c",
-                        "user.email=aksama-paylasim@users.noreply.github.com",
-                        "tag", "-f", "-a", ad, "-m", f"Reel hazır: {tarih}"], capture_output=True, text=True)
-    b = subprocess.run(["git", "push", "origin", f"refs/tags/{ad}"], capture_output=True, text=True, timeout=120)
-    if a.returncode or b.returncode:
-        raise SystemExit("Reel etiketi yazılamadı: " + (b.stderr or a.stderr)[:200])
-    ozet(f"Kayıt: {ad}")
+    for i in range(3):
+        a = subprocess.run(["git", "-c", "user.name=aksama-paylasim", "-c",
+                            "user.email=aksama-paylasim@users.noreply.github.com",
+                            "tag", "-f", "-a", ad, "-m", mesaj], capture_output=True, text=True)
+        b = subprocess.run(["git", "push", "-f", "origin", f"refs/tags/{ad}"], capture_output=True, text=True, timeout=120)
+        if a.returncode == 0 and b.returncode == 0:
+            return True
+        P.uyari(f"Reel etiketi yazılamadı (deneme {i + 1}): {(b.stderr or a.stderr).strip()[:200]}")
+        P.uyu(10)
+    return False
+
+
+def boyut_oku(adres):
+    """Pages'teki videonun boyutu (video/mp4 değilse ya da açılmıyorsa None)."""
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f"{adres}?v={secrets.token_hex(4)}",
+                                    headers={"User-Agent": "aksama-medya-reel"}), timeout=60) as r:
+            if r.status != 200 or not r.headers.get("Content-Type", "").startswith("video/mp4"):
+                return None
+            return len(r.read())
+    except Exception:
+        return None
+
+
+def video_yayinda(adres, boyut):
+    bas = P.zaman()
+    while boyut_oku(adres) != boyut:
+        if P.zaman() - bas > VIDEO_BEKLE:
+            raise P.Dur(f"Video {VIDEO_BEKLE // 60} dk içinde Pages'te görünmedi.")
+        P.uyu(15)
+    P.bilgi("Video Pages'te.")
+
+
+def bugun_reel(tarih, ilk):
+    """Hesabın son paylaşımlarında bugünün reel'i var mı (aynı gün, aynı ilk satır)? Döner: medya kimliği ya da None."""
+    r = P.graph("GET", f"{P.IG_ID}/media",
+                {"fields": "id,caption,media_type,media_product_type,timestamp", "limit": "10"})
+    for m in r.get("data", []):
+        try:
+            gun = dt.datetime.strptime(m["timestamp"], "%Y-%m-%dT%H:%M:%S%z").astimezone(IST).date()
+        except (KeyError, ValueError):
+            continue
+        reel = m.get("media_product_type") == "REELS" or m.get("media_type") == "VIDEO"
+        if gun == tarih and reel and P.ilk_satir(m.get("caption")) == ilk:
+            return m["id"]
+    return None
+
+
+def kap_bekle(kap, son):
+    bas = P.zaman()
+    while True:
+        s = P.dayanikli("reel kabı durumu", lambda: P.graph("GET", kap, {"fields": "status_code,status"}), son)
+        kod = s.get("status_code")
+        if kod == "FINISHED":
+            return
+        if kod in ("ERROR", "EXPIRED"):
+            raise P.Dur(f"Instagram videoyu kabul etmedi ({kod}): {s.get('status', '')}")
+        if P.zaman() - bas > ISLEM_BEKLE:
+            raise P.Dur(f"Instagram videoyu {ISLEM_BEKLE // 60} dk içinde işlemedi.")
+        P.uyu(15)
+
+
+def yayinla(kap, tarih, ilk, son):
+    """media_publish. Belirsiz hatada (gitmiş olabilir) Instagram'a bakmadan yeniden denemez."""
+    deneme = 0
+    while True:
+        try:
+            return P.graph("POST", f"{P.IG_ID}/media_publish", {"creation_id": kap}, zaman_asimi=120)
+        except P.GraphHatasi as h:
+            if not h.gecici():
+                raise P.Dur(f"Reel paylaşılamadı: {h.kisa()}")
+            P.uyari(f"Reel paylaşımı: geçici hata ({h.kisa()}); gidip gitmediğine bakılacak.")
+            hata = h
+        while True:
+            b = P.bekleme_suresi(deneme, hata)
+            if P.zaman() + b > son:
+                raise P.Dur("Reel paylaşım süresi doldu; paylaşılmadı ya da belirsiz. Instagram'a elle bakılmalı.")
+            P.uyu(b)
+            deneme += 1
+            try:
+                var = bugun_reel(tarih, ilk)
+                break
+            except P.GraphHatasi as h2:
+                P.uyari(f"Reel denetimi okunamadı: {h2.kisa()}")
+        if var:
+            return {"id": var, "_onceden": True}
+
+
+def paylas():
+    tarih_yazi, gun, video = sys.argv[2], pathlib.Path(sys.argv[3]), pathlib.Path(sys.argv[4])
+    kip = os.environ.get("KIP", "") or "yayin"
+    if not INSTAGRAMA_PAYLAS:
+        raise P.Bitti("Instagram'a reel paylaşımı kapalı (INSTAGRAMA_PAYLAS); video yalnız Pages'te.")
+    if not P.TOKEN:
+        raise P.Dur("IG_TOKEN yok.")
+    tarih = dt.date.fromisoformat(tarih_yazi)
+    g = json.loads((gun / "gun.json").read_text(encoding="utf-8"))
+    metin = aciklama(g)
+    ilk = P.ilk_satir(metin)
+    son = P.zaman() + REEL_DENEME
+    if kip == "yayin":
+        var = P.dayanikli("reel denetimi", lambda: bugun_reel(tarih, ilk), son)
+        if var:
+            etiket_yaz(tarih_yazi, f"media {var} (Instagram'da önceden paylaşılmış bulundu)")
+            raise P.Bitti("Bugünün reel'i Instagram'da zaten var; yeniden paylaşılmadı.")
+    taban = (os.environ.get("SAYFA_ADRESI") or "").rstrip("/")
+    if not taban:
+        raise P.Dur("Pages adresi yok (deploy-pages çıktısı).")
+    adres = f"{taban}/reel.mp4"
+    video_yayinda(adres, video.stat().st_size)
+    prm = {"media_type": "REELS", "video_url": adres, "caption": metin, "share_to_feed": "true",
+           "thumb_offset": str(KAPAK_ANI_MS)}
+    if (os.environ.get("YZ_ETIKETI") or "hayir").strip().lower() == "evet":
+        prm["is_ai_generated"] = "true"
+    kap = P.dayanikli("reel kabı", lambda: P.graph("POST", f"{P.IG_ID}/media", prm)["id"], son)
+    kap_bekle(kap, son)
+    if kip != "yayin":
+        ozet("Prova tamam: reel Instagram'da hazır, **paylaşılmadı** (kap 24 saatte kendiliğinden silinir).")
+        return
+    sonuc = yayinla(kap, tarih, ilk, son)
+    mid = sonuc["id"]
+    try:
+        m = P.graph("GET", mid, {"fields": "permalink,timestamp"})
+    except P.GraphHatasi:
+        m = {}
+    yazildi = etiket_yaz(tarih_yazi, f"media {mid} {m.get('permalink', '')} {m.get('timestamp', '')}".strip())
+    ozet(f"**Reel paylaşıldı** {P.simdi():%H:%M}: {m.get('permalink', mid)}"
+         + (" (önceki denemede gitmiş)" if sonuc.get("_onceden") else ""))
+    if not yazildi:
+        raise P.Dur("Reel paylaşıldı ama kayıt etiketi yazılamadı.")
+
+
+def calistir(adim):
+    try:
+        {"gerek": gerek, "sayfa": sayfa, "paylas": paylas}[adim]()
+    except P.Bitti as e:
+        ozet(f"Yapılacak iş yok: {e}")
+    except P.Dur as e:
+        print(f"::error::{e}", flush=True)
+        ozet(f"**Durdu:** {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    {"gerek": gerek, "sayfa": sayfa, "etiket": etiket}[sys.argv[1]]()
+    calistir(sys.argv[1])
