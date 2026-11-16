@@ -1,0 +1,118 @@
+# Günlük reel videosu (Rıdvan 17 Kas 01:37: "Edits için müzik hariç bitmiş video yeterli. Çok uğraşamam").
+# Bugünün gönderisi paylaşıldıktan sonra (kayıt etiketi paylasildi/<bugün>) günün videosu üretilir ve
+# sabit adrese konur: https://ridvancoskun1975-cpu.github.io/aksama-medya/reel/ (video: /reel.mp4).
+# Rıdvan telefondan indirir, Edits'te isterse müzik ekleyip paylaşır. Akşam 20:00 hazırlığı Pages'i
+# yeniden kurunca video kalkar. Instagram'a kendiliğinden reel paylaşımı YOK (Rıdvan'ın onayı olmadan açılmaz).
+# Paylaşım işinden ayrı: bu iş bozulsa da 09:00 gönderisi etkilenmez.
+# Açık depo: günlüğe menü ve açıklama yazılmaz.
+name: Reel
+run-name: "Reel · ${{ github.event_name == 'workflow_run' && 'otomatik' || inputs.kip }}${{ inputs.tarih && format(' · {0}', inputs.tarih) || '' }}"
+
+on:
+  workflow_run:
+    workflows: [Paylaşım]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      kip:
+        description: "prova = video ve sayfa yayımlanır, kayıt etiketi yazılmaz; yayin = etiket de yazılır"
+        type: choice
+        options: [prova, yayin]
+        default: prova
+      tarih:
+        description: "YYYY-AA-GG (boşsa bugün). Yalnız gönderisi paylaşılmış gün."
+        type: string
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: reel
+  cancel-in-progress: false
+
+jobs:
+  reel:
+    name: Reel
+    if: github.repository == 'ridvancoskun1975-cpu/aksama-medya'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write     # kayıt etiketi reel/<tarih>
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Gerek var mı
+        id: gerek
+        timeout-minutes: 3
+        env:
+          OLAY: ${{ github.event_name }}
+          SONUC: ${{ github.event.workflow_run.conclusion }}
+          KIP: ${{ inputs.kip }}
+          TARIH_GIRDI: ${{ inputs.tarih }}
+        run: python3 paylas/reel.py gerek
+
+      - name: Günün klasörü ve üretici (aksama-bot, yalnız okuma)
+        if: steps.gerek.outputs.gerek == 'evet'
+        uses: actions/checkout@v7
+        with:
+          repository: ridvancoskun1975-cpu/aksama-bot
+          token: ${{ secrets.BOT_OKUMA }}
+          path: bot
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            uretim
+            maskot
+            yazi-tipleri
+            gorseller
+            gunler/${{ steps.gerek.outputs.tarih }}
+
+      - name: Araçlar (Playwright, ffmpeg)
+        if: steps.gerek.outputs.gerek == 'evet'
+        timeout-minutes: 8
+        run: |
+          python3 -m pip install --quiet playwright==1.63.0
+          python3 -m playwright install --with-deps chromium > /dev/null
+          command -v ffmpeg > /dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null)
+
+      - name: Videoyu üret
+        if: steps.gerek.outputs.gerek == 'evet'
+        timeout-minutes: 6
+        env:
+          TARIH: ${{ steps.gerek.outputs.tarih }}
+        run: |
+          mkdir -p _site
+          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Akşama Ne Var?</title><p><a href="https://www.instagram.com/aksama.ne.var/">@aksama.ne.var</a></p>' > _site/index.html
+          python3 bot/uretim/reel.py "bot/gunler/$TARIH" --cikti _site/reel.mp4 > /dev/null
+          python3 paylas/reel.py sayfa "bot/gunler/$TARIH"
+          ls -l _site/reel.mp4 | awk '{print "Video: " int($5/1024) " KB"}'
+
+      - name: Pages'e yükle
+        if: steps.gerek.outputs.gerek == 'evet'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+          retention-days: 1
+
+      - name: Pages'e çıkar
+        id: dagit
+        if: steps.gerek.outputs.gerek == 'evet'
+        timeout-minutes: 10
+        uses: actions/deploy-pages@v5
+
+      - name: Kayıt etiketi
+        if: steps.gerek.outputs.gerek == 'evet' && steps.gerek.outputs.kip == 'yayin'
+        run: python3 paylas/reel.py etiket "${{ steps.gerek.outputs.tarih }}"
+
+      - name: Adres
+        if: steps.gerek.outputs.gerek == 'evet'
+        env:
+          ADRES: ${{ steps.dagit.outputs.page_url }}
+        run: |
+          echo "Sayfa: ${ADRES}reel/" >> "$GITHUB_STEP_SUMMARY"
