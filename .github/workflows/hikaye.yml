@@ -1,0 +1,46 @@
+# Öne çıkan halkaların hikâyeleri (Rıdvan 17 Kas 19:11: "önerdiğin 2 halka uygun hemen yapalım. tabii resim de
+# gerekir."; 19:17: "instagram işini sen benim pc de şimdi yap"). Elle başlatılır; saati yoktur.
+# hikaye/<ad>/*.jpg dosya adı sırasıyla Instagram'a hikâye olarak gider. Halka sonra Instagram'da elle kurulur.
+# Kilit: her hikâye için kayıt etiketi hikaye/<ad>/<dosya>. 08:00–09:20 arasında çalışmaz.
+name: Hikâye
+run-name: "Hikâye · ${{ inputs.ad }} · ${{ inputs.kip }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      ad:
+        description: "hikaye/ altındaki klasör"
+        type: string
+        default: "2026-11-one-cikan"
+      kip:
+        description: "prova = görsel Instagram'a yüklenir ama paylaşılmaz; yayin = hikâye paylaşılır"
+        type: choice
+        options: [prova, yayin]
+        default: prova
+
+permissions: {}
+
+concurrency:
+  group: hikaye
+  cancel-in-progress: false
+
+jobs:
+  hikaye:
+    name: Hikâye
+    if: github.repository == 'ridvancoskun1975-cpu/aksama-medya'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write     # kayıt etiketi hikaye/<ad>/<dosya>
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Instagram'a hikâye
+        timeout-minutes: 22
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          KIP: ${{ inputs.kip }}
+          AD: ${{ inputs.ad }}
+        run: python3 paylas/hikaye.py "$AD"
