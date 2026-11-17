@@ -1,4 +1,4 @@
-"""Reel paylaşımının denemesi: sahte Instagram (Graph), sahte Pages, sahte etiket, sahte saat.
+"""Reel paylaşımının denemesi: sahte Instagram (Graph ve video yükleme), sahte etiket, sahte saat.
 Gerçek hesaba ve gerçek depoya hiçbir şey gönderilmez.
 Çalıştırma: python3 paylas/test_reel.py -v
 """
@@ -28,6 +28,8 @@ GUN.mkdir()
     {"tur": "Yan yemek", "ad": "Pirinç Pilavı"}, {"tur": "Tatlı", "ad": "Sütlaç"}]}), encoding="utf-8")
 VIDEO = GECICI / "reel.mp4"
 VIDEO.write_bytes(b"x" * 1234)
+YAN = GECICI / "reel.json"
+YUKLEME_ADRESI = "https://rupload.facebook.com/ig-api-upload/v26.0/kap"
 
 
 class Sahte:
@@ -38,15 +40,29 @@ class Sahte:
         self.kap_durumlari = []        # sırayla dönecek status_code'lar
         self.yayin_hatalari = []       # media_publish'te sırayla atılacak hatalar
         self.etiketler = []
-        self.pages_boyut = [1234]      # sırayla dönecek boyutlar (son değer kalır)
+        self.yuklemeler = []           # (adres, bayt, başlıklar)
+        self.yukleme_hatalari = []     # yüklemede sırayla atılacak hatalar ya da dönecek cevaplar
+        self.kap_sayisi = 0
+        self.uri_ver = True
+
+    def ham_yukle(self, adres, veri, basliklar):
+        self.yuklemeler.append((adres, len(veri), dict(basliklar)))
+        if self.yukleme_hatalari:
+            h = self.yukleme_hatalari.pop(0)
+            if isinstance(h, dict):
+                return h
+            raise h
+        return {"success": True, "message": "Upload successful."}
 
     def graph(self, yontem, yol, params=None, zaman_asimi=60):
         self.istekler.append((yontem, yol, dict(params or {})))
         if yontem == "GET" and yol.endswith("/media"):
             return {"data": list(self.medya)}
         if yontem == "POST" and yol.endswith("/media"):
-            return {"id": "kap1"}
-        if yontem == "GET" and yol == "kap1":
+            self.kap_sayisi += 1
+            kap = f"kap{self.kap_sayisi}"
+            return {"id": kap, "uri": f"{YUKLEME_ADRESI[:-3]}{kap}"} if self.uri_ver else {"id": kap}
+        if yontem == "GET" and yol.startswith("kap"):
             kod = self.kap_durumlari.pop(0) if self.kap_durumlari else "FINISHED"
             return {"status_code": kod, "status": kod}
         if yontem == "POST" and yol.endswith("/media_publish"):
@@ -77,19 +93,19 @@ class Sahte:
 class ReelDeneme(unittest.TestCase):
     def setUp(self):
         self.s = s = Sahte()
-        self.eski = (P.graph, P.uyu, P.zaman, R.boyut_oku, R.etiket_yaz, R.INSTAGRAMA_PAYLAS)
+        self.eski = (P.graph, P.uyu, P.zaman, R.ham_yukle, R.etiket_yaz, R.INSTAGRAMA_PAYLAS)
         P.graph = s.graph
         P.uyu = lambda sn: setattr(s, "saat", s.saat + sn)
         P.zaman = lambda: s.saat
-        R.boyut_oku = lambda adres: s.pages_boyut.pop(0) if len(s.pages_boyut) > 1 else s.pages_boyut[0]
+        R.ham_yukle = s.ham_yukle
         R.etiket_yaz = lambda tarih, mesaj: (s.etiketler.append((tarih, mesaj)), True)[1]
-        os.environ["SAYFA_ADRESI"] = "https://ornek.github.io/aksama-medya/"
+        YAN.write_text(json.dumps({"muzik": "Cotton Sky", "dosya": "cotton-sky.m4a"}), encoding="utf-8")
         os.environ["KIP"] = "yayin"
         os.environ.pop("YZ_ETIKETI", None)
         sys.argv = ["reel.py", "paylas", TARIH, str(GUN), str(VIDEO)]
 
     def tearDown(self):
-        P.graph, P.uyu, P.zaman, R.boyut_oku, R.etiket_yaz, R.INSTAGRAMA_PAYLAS = self.eski
+        P.graph, P.uyu, P.zaman, R.ham_yukle, R.etiket_yaz, R.INSTAGRAMA_PAYLAS = self.eski
 
     def calis(self):
         cikti = io.StringIO()
@@ -107,8 +123,16 @@ class ReelDeneme(unittest.TestCase):
         self.assertEqual(len(self.s.yayinlar()), 1)
         prm = self.s.kaplar()[0][2]
         self.assertEqual(prm["media_type"], "REELS")
-        self.assertEqual(prm["video_url"], "https://ornek.github.io/aksama-medya/reel.mp4")
+        self.assertEqual(prm["upload_type"], "resumable")
+        self.assertNotIn("video_url", prm)            # video açık adrese konmaz (müzik lisansı)
+        self.assertEqual(prm["audio_name"], "Cotton Sky")
         self.assertEqual(prm["share_to_feed"], "true")
+        self.assertEqual(len(self.s.yuklemeler), 1)
+        adres, bayt, bas = self.s.yuklemeler[0]
+        self.assertEqual(adres, YUKLEME_ADRESI + "1")
+        self.assertEqual(bayt, 1234)
+        self.assertEqual(bas["Authorization"], "OAuth sahte")
+        self.assertEqual((bas["offset"], bas["file_size"]), ("0", "1234"))
         self.assertNotIn("is_ai_generated", prm)
         self.assertIn(P.YZ_SATIRI, prm["caption"])
         self.assertIn(P.TELIF_SATIRI, prm["caption"])
@@ -127,6 +151,7 @@ class ReelDeneme(unittest.TestCase):
         kod, cikti = self.calis()
         self.assertEqual(kod, 0, cikti)
         self.assertEqual(self.s.kaplar(), [])
+        self.assertEqual(self.s.yuklemeler, [])
         self.assertEqual(self.s.yayinlar(), [])
         self.assertIn("m0", self.s.etiketler[0][1])
 
@@ -143,8 +168,10 @@ class ReelDeneme(unittest.TestCase):
         kod, cikti = self.calis()
         self.assertEqual(kod, 0, cikti)
         self.assertEqual(len(self.s.kaplar()), 1)
+        self.assertEqual(len(self.s.yuklemeler), 1)
         self.assertEqual(self.s.yayinlar(), [])
         self.assertEqual(self.s.etiketler, [])
+        self.assertIn("Cotton Sky", cikti)
 
     def test_video_reddedilirse_durur(self):
         self.s.kap_durumlari = ["IN_PROGRESS", "ERROR"]
@@ -172,18 +199,48 @@ class ReelDeneme(unittest.TestCase):
         self.assertEqual(kod, 1)
         self.assertEqual(self.s.etiketler, [])
 
-    def test_video_pagese_gelmezse_durur(self):
-        self.s.pages_boyut = [None]
+    def test_yukleme_gecici_hatada_yeni_kapla_dener(self):
+        self.s.yukleme_hatalari = [P.GraphHatasi(None, {"error": {"message": "koptu"}}, ag=True)]
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 0, cikti)
+        self.assertEqual(len(self.s.kaplar()), 2)
+        self.assertEqual(len(self.s.yuklemeler), 2)
+        self.assertEqual(self.s.yuklemeler[1][0], YUKLEME_ADRESI + "2")
+        self.assertEqual(len(self.s.yayinlar()), 1)
+
+    def test_yukleme_basarisiz_cevabinda_yeniden_dener(self):
+        self.s.yukleme_hatalari = [{"success": False, "message": "hata"}]
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 0, cikti)
+        self.assertEqual(len(self.s.yuklemeler), 2)
+        self.assertEqual(len(self.s.yayinlar()), 1)
+
+    def test_yukleme_kalici_hatada_durur(self):
+        self.s.yukleme_hatalari = [P.GraphHatasi(400, {"error": {"message": "izin yok", "code": 10}})]
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 1)
+        self.assertEqual(len(self.s.kaplar()), 1)
+        self.assertEqual(self.s.yayinlar(), [])
+        self.assertEqual(self.s.etiketler, [])
+
+    def test_uri_gelmezse_adres_kurulur(self):
+        self.s.uri_ver = False
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 0, cikti)
+        self.assertEqual(self.s.yuklemeler[0][0], YUKLEME_ADRESI + "1")
+
+    def test_muzik_adi_yoksa_ses_adi_konmaz(self):
+        YAN.unlink()
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 0, cikti)
+        self.assertNotIn("audio_name", self.s.kaplar()[0][2])
+
+    def test_video_yoksa_durur(self):
+        sys.argv[4] = str(GECICI / "yok.mp4")
         kod, cikti = self.calis()
         self.assertEqual(kod, 1)
         self.assertEqual(self.s.kaplar(), [])
-        self.assertIn("Pages", cikti)
-
-    def test_video_gec_gelirse_bekler(self):
-        self.s.pages_boyut = [None, 99, 1234]
-        kod, cikti = self.calis()
-        self.assertEqual(kod, 0, cikti)
-        self.assertEqual(len(self.s.yayinlar()), 1)
+        self.assertIn("Video yok", cikti)
 
     def test_kapali_anahtar(self):
         R.INSTAGRAMA_PAYLAS = False

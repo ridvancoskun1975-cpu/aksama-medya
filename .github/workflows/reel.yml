@@ -2,10 +2,11 @@
 # (09:20; çıkmadıysa 11:40, 14:40, 17:40). Rıdvan 17 Kas 09:27: "GitHub yalnız Google başlatınca paylaşır."
 # Günlük reel (Rıdvan 17 Kas 01:54: "Ben uğraşmak istemiyorum, sen yap." · "Edits iptal";
 # 01:57: "Reels sen gönder. Takipçi kazanma odaklı. Hashtagler dikkat!!").
-# Bugünün onaylı gönderisi paylaşıldıktan sonra (kayıt etiketi paylasildi/<bugün>) aynı menüden video üretilir,
-# Pages'e konur (https://ridvancoskun1975-cpu.github.io/aksama-medya/reel/ , video /reel.mp4) ve Instagram'a
-# reel olarak kendiliğinden paylaşılır. Kilitler: reel/<tarih> etiketi + Instagram'daki son paylaşımlar.
-# Müzik Graph API ile eklenemez; video müziksiz gider. Kapatma: paylas/reel.py INSTAGRAMA_PAYLAS = False.
+# Bugünün onaylı gönderisi paylaşıldıktan sonra (kayıt etiketi paylasildi/<bugün>) aynı menüden müzikli video
+# üretilir ve Instagram'a doğrudan yüklenerek reel olarak kendiliğinden paylaşılır. Kilitler: reel/<tarih> etiketi
+# + Instagram'daki son paylaşımlar. Müzik (Rıdvan 17 Kas 14:58: "bu müzikleri kullanacağız random olarak"):
+# Meta Sound Collection, aksama-bot/muzik; lisans yalnız Meta ürünlerini kapsar, bu yüzden video Pages'e ya da başka
+# açık adrese konmaz, eser (artifact) olarak da saklanmaz. Kapatma: paylas/reel.py INSTAGRAMA_PAYLAS = False.
 # Paylaşım işinden ayrı: bu iş bozulsa da 09:00 gönderisi etkilenmez.
 # Açık depo: günlüğe menü ve açıklama yazılmaz.
 name: Reel
@@ -15,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       kip:
-        description: "prova = video Pages'e konur, Instagram kabı kurulur ama paylaşılmaz; yayin = reel paylaşılır"
+        description: "prova = video Instagram'a yüklenir ama paylaşılmaz; yayin = reel paylaşılır"
         type: choice
         options: [prova, yayin]
         default: prova
@@ -38,10 +39,6 @@ jobs:
     timeout-minutes: 75
     permissions:
       contents: write     # kayıt etiketi reel/<tarih>
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
     steps:
       - uses: actions/checkout@v7
         with:
@@ -71,6 +68,7 @@ jobs:
             maskot
             yazi-tipleri
             gorseller
+            muzik
             gunler/${{ steps.gerek.outputs.tarih }}
 
       - name: Araçlar (Playwright, ffmpeg)
@@ -87,24 +85,9 @@ jobs:
         env:
           TARIH: ${{ steps.gerek.outputs.tarih }}
         run: |
-          mkdir -p _site
-          printf '%s\n' '<!doctype html><meta charset="utf-8"><title>Akşama Ne Var?</title><p><a href="https://www.instagram.com/aksama.ne.var/">@aksama.ne.var</a></p>' > _site/index.html
-          python3 bot/uretim/reel.py "bot/gunler/$TARIH" --cikti _site/reel.mp4 > /dev/null
-          python3 paylas/reel.py sayfa "bot/gunler/$TARIH"
-          ls -l _site/reel.mp4 | awk '{print "Video: " int($5/1024) " KB"}'
-
-      - name: Pages'e yükle
-        if: steps.gerek.outputs.gerek == 'evet'
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: _site
-          retention-days: 1
-
-      - name: Pages'e çıkar
-        id: dagit
-        if: steps.gerek.outputs.gerek == 'evet'
-        timeout-minutes: 10
-        uses: actions/deploy-pages@v5
+          python3 bot/uretim/reel.py "bot/gunler/$TARIH" --cikti "$RUNNER_TEMP/reel/reel.mp4" > /dev/null
+          ls -l "$RUNNER_TEMP/reel/reel.mp4" | awk '{print "Video: " int($5/1024) " KB"}'
+          python3 -c "import json,sys; print('Müzik:', json.load(open(sys.argv[1])).get('muzik'))" "$RUNNER_TEMP/reel/reel.json" || echo "Müzik: yok"
 
       - name: Instagram'a reel
         if: steps.gerek.outputs.gerek == 'evet'
@@ -113,13 +96,5 @@ jobs:
           IG_TOKEN: ${{ secrets.IG_TOKEN }}
           YZ_ETIKETI: ${{ vars.YZ_ETIKETI }}
           KIP: ${{ steps.gerek.outputs.kip }}
-          SAYFA_ADRESI: ${{ steps.dagit.outputs.page_url }}
           TARIH: ${{ steps.gerek.outputs.tarih }}
-        run: python3 paylas/reel.py paylas "$TARIH" "bot/gunler/$TARIH" _site/reel.mp4
-
-      - name: Adres
-        if: always() && steps.gerek.outputs.gerek == 'evet'
-        env:
-          ADRES: ${{ steps.dagit.outputs.page_url }}
-        run: |
-          echo "Sayfa: ${ADRES}reel/" >> "$GITHUB_STEP_SUMMARY"
+        run: python3 paylas/reel.py paylas "$TARIH" "bot/gunler/$TARIH" "$RUNNER_TEMP/reel/reel.mp4"
