@@ -1,10 +1,11 @@
-# KAPALI (Rıdvan 17 Kas 09:10: "Bundan sonra hiçbir projede hiçbir zaman GitHub paylaşım istemiyorum. Zamanlayıcı
-# Google'da olacak. Bu bir karardır." · "GitHub hemen dursun"): saatler kaldırıldı; bu iş kendiliğinden çalışmaz.
-# Akşama Ne Var? günlük paylaşım (09:00 İstanbul). "Kesintisiz paylaşım" (Rıdvan 13 Kas 20:43: "kur"):
+# Akşama Ne Var? günlük paylaşım (09:00 İstanbul). Günlük Gümüş düzeni: saati Google tutar, paylaşımı bu iş yapar.
+# Rıdvan 17 Kas 09:27: "Saat Google'da, GitHub'ın kendi saati tamamen kapalı, yedek olarak bile yok. GitHub yalnız
+# Google başlatınca paylaşır." · 09:29: "gunlukgumus gibi olacak!!!"
+# Bu dosyada saat (schedule) YOKTUR ve eklenmez. İşi Google Apps Script "Akşama dış tetik" başlatır (workflow_dispatch):
 #   akşam 20:00  yarının gönderisi Instagram'a yüklenir, paylaşılmaz (sorun akşamdan görülür)
-#   sabah        akşamdan hazır kap paylaşılır; yoksa her şey sabah yapılır; gün içinde yeniden denenir
-# Asıl sabah başlatıcısı: Google Apps Script "Akşama dış tetik" (08:15–08:45, workflow_dispatch).
-# Aşağıdaki saatler yedektir; paylaşıldıysa iş kayıt etiketini görüp hemen çıkar.
+#   sabah 08:15  akşamdan hazır kap 09:00'da paylaşılır; yoksa her şey sabah yapılır
+#   nöbetçi      09:10, 09:40, 11:40, 14:40, 17:40: paylaşım çıkmadıysa Google yeniden başlatır
+# "Kesintisiz paylaşım" (Rıdvan 13 Kas 20:43: "kur"). Paylaşıldıysa iş kayıt etiketini görüp hemen çıkar.
 # Kip: elle seçilmezse depo değişkeni PAYLASIM_KIPI (kontrol | prova | yayin; boşsa kontrol).
 # Gerçek paylaşım yalnız PAYLASIM_KIPI=yayin iken yapılır (Rıdvan'ın açık onayı).
 # Açık depo: günlüğe anahtar, menü ve açıklama yazılmaz. Değişiklik isteği (pull request) bu işi başlatamaz.

@@ -6,14 +6,14 @@ Herkese açık depodur: yalnız paylaşım kodu durur. Menüler, tarifler ve sı
 
 ## Nasıl çalışır
 
-**Kesintisiz paylaşım (13 Kas 2026):** her akşam 20:00'de yarının gönderisi Instagram'a yüklenir ama paylaşılmaz; kimliği `kap/<tarih>` etiketine yazılır. Sorun varsa akşamdan görülür. Sabah iş bu hazır gönderiyi yalnız paylaşır; içerik akşamdan sonra değiştiyse ya da hazırlık yoksa her şeyi sabah yapar. Paylaşılana kadar gün içinde 08:40, 11:40, 14:40 ve 17:40'ta yeniden denenir; 23:00'e kadar paylaşır.
+**Kesintisiz paylaşım (13 Kas 2026):** her akşam 20:00'de yarının gönderisi Instagram'a yüklenir ama paylaşılmaz; kimliği `kap/<tarih>` etiketine yazılır. Sorun varsa akşamdan görülür. Sabah iş bu hazır gönderiyi yalnız paylaşır; içerik akşamdan sonra değiştiyse ya da hazırlık yoksa her şeyi sabah yapar. Paylaşım çıkmadıysa Google 09:10, 09:40, 11:40, 14:40 ve 17:40'ta işi yeniden başlatır; iş 23:00'e kadar paylaşır.
 
-1. Google Apps Script "Akşama dış tetik" 08:15–08:45 arasında işi başlatır (yedek: GitHub saatleri).
+1. Google Apps Script "Akşama dış tetik" 08:15–08:45 arasında işi başlatır. Bu depoda GitHub saati (schedule) yoktur ve eklenmez (Rıdvan 17 Kas 09:27: "GitHub yalnız Google başlatınca paylaşır."). Reel işini de Google başlatır (09:20).
 2. `hazirla`: kip ve tarih; kayıt etiketi (kilit 1); anahtar ve hesap adı kilidi (`aksama.ne.var` değilse durur); günün klasörü; denetim (onay, içerik özeti, kare biçimi, açıklama, etiket sayısı).
 3. Kareler Pages'e çıkar; yayında olduğu denetlenir.
 4. `yayinla`: Instagram kapları (kare başına alt metin); 09:00 beklenir; Instagram'daki bugünkü gönderilere bakılır (kilit 2); paylaşılır; `paylasildi/<tarih>` etiketi yazılır.
 
-Bir çalıştırmada geçici hatada 290 dakikaya kadar yeniden dener; sonra gün içi yedek saatler devralır. Paylaşım isteği belirsiz biterse önce gidip gitmediğine bakar, aynı gün iki kez paylaşmaz. Hata olursa iş kırmızı biter (GitHub e-postası).
+Bir çalıştırmada geçici hatada 290 dakikaya kadar yeniden dener; sonra Google'ın gün içi nöbetçisi devralır. Paylaşım isteği belirsiz biterse önce gidip gitmediğine bakar, aynı gün iki kez paylaşmaz. Hata olursa iş kırmızı biter (GitHub e-postası).
 
 ## Kipler
 
