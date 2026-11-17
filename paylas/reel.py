@@ -41,7 +41,7 @@ INSTAGRAMA_PAYLAS = True        # False: reel paylaşılmaz (kapatma anahtarı; 
 REEL_DENEME = 40 * 60           # geçici hatada en çok 40 dk dener
 YUKLEME_SURESI = 300            # tek yükleme isteği en çok 5 dk
 ISLEM_BEKLE = 15 * 60           # Instagram'ın videoyu işlemesi en çok 15 dk
-KAPAK_ANI_MS = 1500             # kapak karesi: girişteki "Bugün akşama ne pişirsem?" ekranı
+KAPAK_ANI_MS = 1500             # kapak karesi: girişteki "Bugün ne yemek yapayım?" ekranı
 
 
 def cikti(ad, deger):
@@ -115,7 +115,8 @@ def etiketler(g):
 
 def aciklama(g):
     adlar = ", ".join(y["ad"] for y in g["yemekler"])
-    satir = [f"Bugün akşama ne pişirsem? Menü hazır: {adlar}.",
+    # Ana söz (Rıdvan 17 Kas 15:38: "asıl odak noktamızı unutma. \"bugün ne yemek yapayım\""; 15:57 "olsun")
+    satir = [f"Bugün ne yemek yapayım? Menü hazır: {adlar}.",
              "Her sabah 09:00'da yeni akşam yemeği menüsü için @aksama.ne.var'ı takip edin.",
              "Tarifler ve alışveriş listesi profildeki gönderide; kaydedin, akşam elinizin altında olsun.",
              "", YZ_SATIRI, TELIF_SATIRI, "", etiketler(g)]
