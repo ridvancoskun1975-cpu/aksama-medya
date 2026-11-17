@@ -1,3 +1,5 @@
+# KAPALI (Rıdvan 17 Kas 09:10: "Bundan sonra hiçbir projede hiçbir zaman GitHub paylaşım istemiyorum. Zamanlayıcı
+# Google'da olacak. Bu bir karardır." · "GitHub hemen dursun"): saatler kaldırıldı; bu iş kendiliğinden çalışmaz.
 # Akşama Ne Var? günlük paylaşım (09:00 İstanbul). "Kesintisiz paylaşım" (Rıdvan 13 Kas 20:43: "kur"):
 #   akşam 20:00  yarının gönderisi Instagram'a yüklenir, paylaşılmaz (sorun akşamdan görülür)
 #   sabah        akşamdan hazır kap paylaşılır; yoksa her şey sabah yapılır; gün içinde yeniden denenir
@@ -26,12 +28,6 @@ on:
         description: "YYYY-AA-GG (boşsa: sabah bugün, akşam yarın). Sabah başka gün yalnız kontrol ve prova için."
         type: string
         required: false
-  schedule:
-    - cron: "0 17 * * *"    # 20:00 İstanbul: akşam hazırlığı (yarın)
-    - cron: "40 5 * * *"    # 08:40: sabah yedeği
-    - cron: "40 8 * * *"    # 11:40: gün içi yeniden deneme
-    - cron: "40 11 * * *"   # 14:40
-    - cron: "40 14 * * *"   # 17:40
 
 permissions: {}
 

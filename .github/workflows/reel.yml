@@ -1,3 +1,4 @@
+# KAPALI (Rıdvan 17 Kas 09:10: GitHub paylaşım yok; zamanlayıcı Google'da olacak): kendiliğinden çalışmaz.
 # Günlük reel (Rıdvan 17 Kas 01:54: "Ben uğraşmak istemiyorum, sen yap." · "Edits iptal";
 # 01:57: "Reels sen gönder. Takipçi kazanma odaklı. Hashtagler dikkat!!").
 # Bugünün onaylı gönderisi paylaşıldıktan sonra (kayıt etiketi paylasildi/<bugün>) aynı menüden video üretilir,
@@ -10,9 +11,6 @@ name: Reel
 run-name: "Reel · ${{ github.event_name == 'workflow_run' && 'otomatik' || inputs.kip }}${{ inputs.tarih && format(' · {0}', inputs.tarih) || '' }}"
 
 on:
-  workflow_run:
-    workflows: [Paylaşım]
-    types: [completed]
   workflow_dispatch:
     inputs:
       kip:
