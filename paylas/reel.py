@@ -113,10 +113,12 @@ def etiketler(g):
     return " ".join(liste)
 
 
-def aciklama(g):
+def aciklama(g, tebrik=None):
     adlar = ", ".join(y["ad"] for y in g["yemekler"])
     # Ana söz (Rıdvan 17 Kas 15:38: "asıl odak noktamızı unutma. \"bugün ne yemek yapayım\""; 15:57 "olsun")
-    satir = [f"Bugün ne yemek yapayım? Menü hazır: {adlar}.",
+    # Özel günde tebrik en üstte (Rıdvan 17 Kas 16:15: "tabii ki uygun bir tebrik, kutlama veya günü önemini
+    # belirten bir mesajı ile olacak bunlar."); söz aksama-bot/takvim/ozel-gunler.json'dan, videodakiyle aynı.
+    satir = ([tebrik] if tebrik else []) + [f"Bugün ne yemek yapayım? Menü hazır: {adlar}.",
              "Her sabah 09:00'da yeni akşam yemeği menüsü için @aksama.ne.var'ı takip edin.",
              "Tarifler ve alışveriş listesi profildeki gönderide; kaydedin, akşam elinizin altında olsun.",
              "", YZ_SATIRI, TELIF_SATIRI, "", etiketler(g)]
@@ -169,14 +171,21 @@ def yukle(kap, uri, video):
     P.bilgi(f"Video Instagram'a yüklendi ({len(veri) // 1024} KB).")
 
 
-def muzik_adi(video):
-    """uretim/reel.py'nin videonun yanına yazdığı parça adı (yoksa None)."""
-    yan = video.with_suffix(".json")
+def yan_bilgi(video, alan, uzunluk):
+    """uretim/reel.py'nin videonun yanına yazdığı bilgi (muzik: parça adı, tebrik: özel günün satırı); yoksa None."""
     try:
-        ad = json.loads(yan.read_text(encoding="utf-8")).get("muzik")
-    except (OSError, ValueError):
+        d = json.loads(video.with_suffix(".json").read_text(encoding="utf-8")).get(alan)
+    except (OSError, ValueError, AttributeError):
         return None
-    return ad.strip()[:60] if isinstance(ad, str) and ad.strip() else None
+    return d.strip()[:uzunluk] if isinstance(d, str) and d.strip() else None
+
+
+def muzik_adi(video):
+    return yan_bilgi(video, "muzik", 60)
+
+
+def tebrik(video):
+    return yan_bilgi(video, "tebrik", 300)
 
 
 def bugun_reel(tarih, ilk):
@@ -243,7 +252,7 @@ def paylas():
         raise P.Dur("IG_TOKEN yok.")
     tarih = dt.date.fromisoformat(tarih_yazi)
     g = json.loads((gun / "gun.json").read_text(encoding="utf-8"))
-    metin = aciklama(g)
+    metin = aciklama(g, tebrik(video))
     ilk = P.ilk_satir(metin)
     son = P.zaman() + REEL_DENEME
     if kip == "yayin":

@@ -235,6 +235,20 @@ class ReelDeneme(unittest.TestCase):
         self.assertEqual(kod, 0, cikti)
         self.assertNotIn("audio_name", self.s.kaplar()[0][2])
 
+    def test_ozel_gunde_tebrik_ilk_satir(self):
+        YAN.write_text(json.dumps({"muzik": "Nikriz Longa", "tebrik": "Regaip Kandiliniz mübarek olsun. Rahmet gecesi."},
+                                  ensure_ascii=False), encoding="utf-8")
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 0, cikti)
+        satir = self.s.kaplar()[0][2]["caption"].split("\n")
+        self.assertEqual(satir[0], "Regaip Kandiliniz mübarek olsun. Rahmet gecesi.")
+        self.assertTrue(satir[1].startswith("Bugün ne yemek yapayım? Menü hazır:"))
+
+    def test_siradan_gunde_tebrik_yok(self):
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 0, cikti)
+        self.assertTrue(self.s.kaplar()[0][2]["caption"].startswith("Bugün ne yemek yapayım? Menü hazır:"))
+
     def test_video_yoksa_durur(self):
         sys.argv[4] = str(GECICI / "yok.mp4")
         kod, cikti = self.calis()
