@@ -98,3 +98,14 @@ jobs:
           KIP: ${{ steps.gerek.outputs.kip }}
           TARIH: ${{ steps.gerek.outputs.tarih }}
         run: python3 paylas/reel.py paylas "$TARIH" "bot/gunler/$TARIH" "$RUNNER_TEMP/reel/reel.mp4"
+
+      # Ek gönderi (tanıtım gibi; paylas/ek.py): reel'den sonra aynı işte, ek/<ad>/ek.json'daki günden başlayarak
+      # bir kez. Reel adımı başarısız biterse çalışmaz; reel zaten paylaşılmışsa (önceki adımlar atlandıysa) çalışır.
+      # Bu adımın hatası reel'i etkilemez (reel önceki adımda paylaşılmış olur).
+      - name: Ek gönderi
+        timeout-minutes: 15
+        env:
+          IG_TOKEN: ${{ secrets.IG_TOKEN }}
+          YZ_ETIKETI: ${{ vars.YZ_ETIKETI }}
+          KIP: ${{ steps.gerek.outputs.kip }}
+        run: python3 paylas/ek.py

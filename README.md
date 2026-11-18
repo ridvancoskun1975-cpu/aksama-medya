@@ -13,6 +13,8 @@ Herkese açık depodur: yalnız paylaşım kodu durur. Menüler, tarifler ve sı
 3. Kareler Pages'e çıkar; yayında olduğu denetlenir.
 4. `yayinla`: Instagram kapları (kare başına alt metin); 09:00 beklenir; Instagram'daki bugünkü gönderilere bakılır (kilit 2); paylaşılır; `paylasildi/<tarih>` etiketi yazılır.
 
+**Reel, hikâye ve ek gönderi:** reel işi (`reel.yml`, `paylas/reel.py`) günün gönderisinden sonra müzikli videoyu Instagram'a doğrudan yükler. Hikâye işi (`hikaye.yml`, `paylas/hikaye.py`) elle başlatılır. Ek gönderi (`paylas/ek.py`; ör. tanıtım) reel işinin son adımıdır: `ek/<ad>/ek.json`'daki günden başlayarak, günün gönderisi ve reel çıktıktan sonra, onay özeti tutuyorsa bir kez paylaşılır; kilit `ek/<ad>` etiketi.
+
 Bir çalıştırmada geçici hatada 290 dakikaya kadar yeniden dener; sonra Google'ın gün içi nöbetçisi devralır. Paylaşım isteği belirsiz biterse önce gidip gitmediğine bakar, aynı gün iki kez paylaşmaz. Hata olursa iş kırmızı biter (GitHub e-postası).
 
 ## Kipler
@@ -37,4 +39,4 @@ Elle başlatırken "zaman" seçilebilir: `sabah` (paylaşım) ya da `aksam` (yar
 
 ## Deneme
 
-`python3 paylas/test_paylas.py -v` — sahte Instagram, sahte GitHub ve sahte saatle 41 durum (akşam hazırlığı ve YZ satırı dâhil) (Pillow gerekir). Gerçek hesaba bir şey gitmez.
+`python3 paylas/test_paylas.py -v` — sahte Instagram, sahte GitHub ve sahte saatle 41 durum (akşam hazırlığı ve YZ satırı dâhil) (Pillow gerekir). Gerçek hesaba bir şey gitmez. Öbürleri: `paylas/test_reel.py`, `paylas/test_hikaye.py`, `paylas/test_ek.py` (dosya dosya çalıştırılır).

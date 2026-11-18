@@ -1,0 +1,16 @@
+{
+  "kareler": [
+    "kareler/01-kanca.jpg",
+    "kareler/02-ornek-menu.jpg",
+    "kareler/03-her-gonderide.jpg",
+    "kareler/04-takip.jpg"
+  ],
+  "aciklama": "aciklama.txt",
+  "ozet": "f0c0d815b0f987f9e71dcfa7c1361081daac6512ca9289479b45e1c05585d9c3",
+  "onay": {
+    "soz": "Rıdvan 17 Kas 21:59: \"Uygun\" (sade kapak; 2. kare ornek-menu-yeni.jpg görülerek. Önceki onay: 19:03 \"tanıtım uygun\")",
+    "kayit": "2026-11-17T19:01:10+00:00",
+    "ozet": "f0c0d815b0f987f9e71dcfa7c1361081daac6512ca9289479b45e1c05585d9c3"
+  },
+  "_not": "Tanıtım gönderisinin onayı. Kareler ya da açıklama değişirse ozet tutmaz, onay düşer. Paylaşım işi (aksama-medya) bu onayı denetler."
+}

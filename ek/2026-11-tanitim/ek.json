@@ -1,0 +1,13 @@
+{
+  "ad": "2026-11-tanitim",
+  "tur": "kaydirmali",
+  "tarih": "2026-11-19",
+  "kaynak": "aksama-bot/tanitim/2026-11-reklam (kareler, aciklama.txt ve onay.json aynen kopyalandı)",
+  "alt_metinler": [
+    "Bugün ne yemek yapayım? Cevabı her sabah 09:00'da burada. Etli kuru fasulye fotoğrafı. Kaydırın.",
+    "Örnek menü: çorba Mercimek Çorbası, ana yemek Etli Kuru Fasulye, yan yemek Pirinç Pilavı, tatlı Fırın Sütlaç.",
+    "Her gönderide: 1. Her sabah 09:00'da akşamın menüsü: çorba, ana yemek, yan yemek, tatlı. 2. Her yemeğin kısa tarifi, adım adım. 3. Hazır alışveriş listesi: evde ne var, ne alınacak. 4. Ölçüler kaşık ve bardakla; malzeme mevsiminde. Her akşam menünüz hazır! Ayşe Hanım ve kedisi Tarçın: Kaydedin, akşam elinizin altında!",
+    "Her sabah 09:00'da yeni menü. \"Bugün ne yemek yapayım?\" derdine son! Takip edin: @aksama.ne.var. Ayşe Hanım ve kedisi Tarçın: Akşamınız bizden!"
+  ],
+  "_not": "Tanıtım gönderisi (Rıdvan 17 Kas 19:03 \"tanıtım uygun\"; 21:59 \"Uygun\"). tarih gününden başlayarak, o günün sabah gönderisinden ve reel'inden sonra reel işinin son adımında bir kez paylaşılır; kilit etiketi ek/<ad>. Kareler ya da açıklama değişirse onay.json'daki özet tutmaz ve paylaşılmaz."
+}
