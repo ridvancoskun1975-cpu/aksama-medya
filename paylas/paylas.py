@@ -13,6 +13,12 @@
   yayinla  kareler yayında mı; Instagram kapları; prova ise burada durur; yayin ise 09:00'ı bekler,
            iki kilit, paylaşım, kayıt etiketi (paylasildi/<tarih>).
 
+Müzikli kapak videosu (Rıdvan 18 Kas 11:48: "Kaydırmalı ileti sesli müzikli tercıh ederim ama otomatik olacak.";
+12:54: "A"): iş akışı onaylı kapaktan hareketli, müzikli bir video üretir (aksama-bot/uretim/kapak_video.py --denetle).
+Video varsa ve bu günün onaylı içeriğine aitse kaydırmalının ilk karesi olur; Instagram'a doğrudan yüklenir (müzik
+lisansı yalnız Meta ürünleri; Pages'e konmaz). Video yoksa, uygun değilse ya da Instagram kabul etmezse gönderi
+resimli kapakla çıkar: video hiçbir zaman gönderiyi engellemez. Kapatma: KAPAK_VIDEOSU = False.
+
 Kipler:
   kontrol  yalnız denetim (Instagram'a yazmaz, Pages'e yüklemez)
   prova    paylaşım dışında her şey: kareler Pages'e çıkar, Instagram kapları hazırlanır, paylaşılmaz
@@ -51,6 +57,10 @@ YASAK = (dt.time(8, 0), dt.time(9, 20))     # bu arada elle kontrol/prova yapıl
 DENEME_SURESI = 290 * 60                    # bir çalıştırmada geçici hatada en çok 290 dk dener (GitHub işi en çok 6 saat)
 YAYINDA_SURESI = 15 * 60                    # kareler en çok 15 dk içinde Pages'te görünmeli
 STOK_BAKIS = 14                             # stok için bakılan gün sayısı
+KAPAK_VIDEOSU = True                        # False: kapak videosu kullanılmaz (kapatma anahtarı)
+VIDEO_SURESI = 15 * 60                      # kapak videosu en çok 15 dk uğraştırır; sonra resimli kapakla devam
+VIDEO_EN_COK = 100 * 1024 * 1024
+RUPLOAD = os.environ.get("RUPLOAD_ADRESI", "https://rupload.facebook.com/ig-api-upload")
 
 # Paylaşım sınırları (Meta belgesi; aynı değerler aksama-bot/uretim/ortak.py içinde)
 GEN, YUK = 1080, 1350
@@ -568,7 +578,8 @@ def hazirla():
         kayit = kap_oku(tarih)
         if kayit and kayit.get("ozet") == p["ozet"] and kap_hazir_mi(kayit.get("kap", "")):
             bilgi("Akşamdan hazırlanmış gönderi bulundu ve hazır; kareler yeniden yüklenmeyecek.")
-            DURUM.write_text(json.dumps({**durum, "kap": kayit["kap"]}, ensure_ascii=False), encoding="utf-8")
+            DURUM.write_text(json.dumps({**durum, "kap": kayit["kap"], "video": kayit.get("video")}, ensure_ascii=False),
+                             encoding="utf-8")
             cikti("pages_gerek", "hayir")
             cikti("yayina_hazir", "evet")
             return
@@ -664,16 +675,100 @@ def paylas_dayanikli(kap, tarih, ilk, son_zaman):
             return {"id": var, "_onceden": True}
 
 
+# ---------- Kapak videosu (Rıdvan 18 Kas 11:48, 12:54) ----------
+def kapak_videosu(d):
+    """Paylaşıma uygun kapak videosu (yol) ya da None. İş akışı videoyu KAPAK_VIDEO yoluna, yan bilgiyi .json'a yazar."""
+    if not KAPAK_VIDEOSU:
+        return None
+    yol = (os.environ.get("KAPAK_VIDEO") or "").strip()
+    if not yol:
+        return None
+    v = pathlib.Path(yol)
+    try:
+        if not v.is_file():
+            uyari("Kapak videosu üretilmemiş; gönderi resimli kapakla hazırlanıyor.")
+            return None
+        b = json.loads(v.with_suffix(".json").read_text(encoding="utf-8"))
+        boyut = v.stat().st_size
+    except (OSError, ValueError) as e:
+        uyari(f"Kapak videosunun yan bilgisi okunamadı ({str(e)[:80]}); gönderi resimli kapakla hazırlanıyor.")
+        return None
+    if not b.get("uygun") or b.get("ozet") != d.get("ozet"):
+        uyari("Kapak videosu bu günün onaylı içeriğine ait değil; gönderi resimli kapakla hazırlanıyor.")
+        return None
+    if not 0 < boyut <= VIDEO_EN_COK:
+        uyari("Kapak videosunun boyutu uygun değil; gönderi resimli kapakla hazırlanıyor.")
+        return None
+    return v
+
+
+def video_yukle(kap, uri, video):
+    """Videoyu Meta'ya doğrudan yükler (resumable upload, tek parça; video açık bir adrese konmaz)."""
+    veri = video.read_bytes()
+    if not (uri or "").startswith("https://rupload.facebook.com/"):
+        uri = f"{RUPLOAD}/{GRAPH.rstrip('/').rsplit('/', 1)[-1]}/{kap}"
+    istek = urllib.request.Request(uri, data=veri, method="POST", headers={
+        "Authorization": f"OAuth {TOKEN}", "offset": "0", "file_size": str(len(veri)),
+        "Content-Type": "application/octet-stream"})
+    try:
+        with urllib.request.urlopen(istek, timeout=300) as r:
+            cevap = json.loads(r.read().decode() or "{}")
+    except urllib.error.HTTPError as e:
+        try:
+            govde = json.loads(e.read().decode())
+        except Exception:
+            govde = {"error": {"message": f"HTTP {e.code}"}}
+        raise GraphHatasi(e.code, govde)
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+        raise GraphHatasi(None, {"error": {"message": str(e)[:200]}}, ag=True)
+    if cevap.get("success") is False:
+        raise GraphHatasi(None, {"error": {"message": "video yüklemesi kabul edilmedi", "is_transient": True}})
+
+
+def video_kabi(video, son_zaman):
+    """Kaydırmalının ilk karesi için video kabı: kurulur, video yüklenir, Instagram işleyene kadar beklenir."""
+    prm = {"media_type": "VIDEO", "is_carousel_item": "true", "upload_type": "resumable"}
+
+    def kur_ve_yukle():
+        # Yükleme yarıda kalırsa yeni kap kurulur (eskisi 24 saatte kendiliğinden silinir).
+        r = graph("POST", f"{IG_ID}/media", prm)
+        video_yukle(r["id"], r.get("uri"), video)
+        return r["id"]
+
+    kap = dayanikli("kapak videosu", kur_ve_yukle, son_zaman)
+    while True:
+        s = dayanikli("kapak videosu durumu", lambda: graph("GET", kap, {"fields": "status_code,status"}), son_zaman)
+        kod = s.get("status_code")
+        if kod == "FINISHED":
+            return kap
+        if kod in ("ERROR", "EXPIRED"):
+            raise Dur(f"Instagram kapak videosunu kabul etmedi ({kod}): {s.get('status', '')}")
+        if zaman() + 10 > son_zaman:
+            raise Dur("Kapak videosu süresinde işlenmedi.")
+        uyu(10)
+
+
 def kap_kur(d, son_zaman):
-    """Kareleri Pages'ten Instagram'a yükler, gönderi kabını kurar. Döner: (kap, kare sayısı)."""
+    """Kareleri Pages'ten Instagram'a yükler, gönderi kabını kurar. Kapak videosu uygunsa ilk kare odur.
+    Döner: (kap, kare sayısı, kapak videolu mu)."""
     taban = (os.environ.get("SAYFA_ADRESI") or "").rstrip("/")
     if not taban:
         raise Dur("Pages adresi yok (deploy-pages çıktısı).")
     adresler = [f"{taban}/{d['gizli']}/{f['ad']}" for f in d["dosyalar"]]
     yayinda_mi(adresler, [f["boyut"] for f in d["dosyalar"]])
     alt = d.get("alt_metinler") or [None] * len(adresler)
+    resimler = list(zip(adresler, alt))
     cocuklar = []
-    for adres, a in zip(adresler, alt):
+    video = kapak_videosu(d)
+    if video:
+        try:
+            cocuklar.append(video_kabi(video, min(son_zaman, zaman() + VIDEO_SURESI)))
+            resimler = resimler[1:]       # ilk kare (kapak) yerine video
+            bilgi(f"Kapak videosu hazır ({video.stat().st_size // 1024} KB, müzikli).")
+        except Exception as e:            # video hiçbir zaman gönderiyi engellemez
+            uyari(f"Kapak videosu kullanılamadı ({str(e)[:160]}); gönderi resimli kapakla hazırlanıyor.")
+    videolu = bool(cocuklar)
+    for adres, a in resimler:
         prm = {"image_url": adres, "is_carousel_item": "true", "alt_text": a}
         cocuklar.append(dayanikli("kare kabı", lambda prm=prm: graph("POST", f"{IG_ID}/media", prm)["id"], son_zaman))
     hazir_bekle(cocuklar, son_zaman)
@@ -682,8 +777,9 @@ def kap_kur(d, son_zaman):
         prm["is_ai_generated"] = "true"
     kap = dayanikli("gönderi kabı", lambda: graph("POST", f"{IG_ID}/media", prm)["id"], son_zaman)
     hazir_bekle([kap], son_zaman)
-    bilgi(f"Instagram kapları hazır: {len(cocuklar)} kare + gönderi" + (" (YZ etiketi açık)" if "is_ai_generated" in prm else ""))
-    return kap, len(cocuklar)
+    bilgi(f"Instagram kapları hazır: {len(cocuklar)} kare + gönderi" + (" (YZ etiketi açık)" if "is_ai_generated" in prm else "")
+          + (" · ilk kare müzikli video" if videolu else ""))
+    return kap, len(cocuklar), videolu
 
 
 def yayinla():
@@ -691,20 +787,22 @@ def yayinla():
     tarih, kip, asama = dt.date.fromisoformat(d["tarih"]), d["kip"], d.get("asama", "sabah")
     son_zaman = zaman() + DENEME_SURESI
     if d.get("kap"):
-        kap, n = d["kap"], None
+        kap, n, videolu = d["kap"], None, d.get("video")
     else:
-        kap, n = kap_kur(d, son_zaman)
-        if not kap_yaz(tarih, {"kap": kap, "ozet": d["ozet"], "zaman": simdi().isoformat(timespec="minutes")}):
+        kap, n, videolu = kap_kur(d, son_zaman)
+        if not kap_yaz(tarih, {"kap": kap, "ozet": d["ozet"], "video": videolu,
+                               "zaman": simdi().isoformat(timespec="minutes")}):
             uyari("Hazırlık kaydı yazılamadı; sonraki çalıştırma gönderiyi yeniden hazırlar.")
+    kapak = " Kapak: müzikli video." if videolu else (" Kapak: resim." if videolu is not None else "")
 
     if asama == "aksam":
         ozet(f"Akşam hazırlığı tamam: {tarih} gönderisi Instagram'a yüklendi ({n} kare), **paylaşılmadı**. "
              + ("Sabah 09:00'da paylaşılacak." if kip == "yayin" else "Kip prova: sabah da paylaşılmaz.")
-             + " (Kap 24 saat geçerli.)")
+             + " (Kap 24 saat geçerli.)" + kapak)
         return
     if kip == "prova":
         ozet(f"Prova tamam: gönderi Instagram'da hazır{f' ({n} kare Pages’ten yüklendi)' if n else ' (akşamdan hazırlanmış)'}; "
-             "**paylaşılmadı** (kap 24 saatte kendiliğinden silinir).")
+             "**paylaşılmadı** (kap 24 saatte kendiliğinden silinir)." + kapak)
         return
 
     hedefi_bekle(tarih)
@@ -726,7 +824,7 @@ def yayinla():
     except GraphHatasi:
         m = {}
     yazildi = etiket_koy(tarih, f"media {mid} {m.get('permalink', '')} {m.get('timestamp', '')}".strip())
-    ozet(f"**Paylaşıldı** {simdi():%H:%M}: {m.get('permalink', mid)}" + (" (önceki denemede gitmiş)" if sonuc.get("_onceden") else ""))
+    ozet(f"**Paylaşıldı** {simdi():%H:%M}: {m.get('permalink', mid)}" + (" (önceki denemede gitmiş)" if sonuc.get("_onceden") else "") + kapak)
     if sorun:
         raise Dur(f"Paylaşıldı ama Instagram bir kısmını düşürdü: {sorun}. Gönderiye elle bakılmalı.")
     if not yazildi:

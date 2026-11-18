@@ -9,6 +9,7 @@
 #   akşam 20:00  yarının gönderisi Instagram'a yüklenir, paylaşılmaz (sorun akşamdan görülür)
 #   sabah 08:15  akşamdan hazır kap 09:00'da paylaşılır; yoksa her şey sabah yapılır
 #   nöbetçi      09:10, 09:40, 11:40, 14:40, 17:40: paylaşım çıkmadıysa Google yeniden başlatır
+# İlk kare müzikli kapak videosudur (Rıdvan 18 Kas 12:54 "A"); video olmazsa resimli kapak (aşağıda "Kapak videosu").
 # "Kesintisiz paylaşım" (Rıdvan 13 Kas 20:43: "kur"). Paylaşıldıysa iş kayıt etiketini görüp hemen çıkar.
 # Kip: elle seçilmezse depo değişkeni PAYLASIM_KIPI (kontrol | prova | yayin; boşsa kontrol).
 # Gerçek paylaşım yalnız PAYLASIM_KIPI=yayin iken yapılır (Rıdvan'ın açık onayı).
@@ -90,11 +91,65 @@ jobs:
         timeout-minutes: 15
         uses: actions/deploy-pages@v5
 
+      # Müzikli kapak videosu (Rıdvan 18 Kas 11:48: "Kaydırmalı ileti sesli müzikli tercıh ederim ama otomatik olacak.";
+      # 12:54: "A" = yakınlaşma, maskot, buhar). Yalnız yeni kap kurulurken (akşam hazırlığı ya da kapsız sabah).
+      # Bu üç adımın hiçbiri gönderiyi engellemez (continue-on-error): video yoksa, ilk karesi onaylı kapakla aynı
+      # değilse ya da Instagram kabul etmezse gönderi resimli kapakla çıkar. Müzik lisansı yalnız Meta ürünleri:
+      # video Pages'e ve esere (artifact) konmaz, Instagram'a doğrudan yüklenir. Açık depo: ayrıntılı çıktı günlüğe yazılmaz.
+      - name: Kapak videosu için üretici (aksama-bot, yalnız okuma)
+        id: bot
+        if: steps.hazirla.outputs.yayina_hazir == 'evet' && steps.hazirla.outputs.pages_gerek == 'evet'
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/checkout@v7
+        with:
+          repository: ridvancoskun1975-cpu/aksama-bot
+          token: ${{ secrets.BOT_OKUMA }}
+          path: bot
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            uretim
+            maskot
+            yazi-tipleri
+            gorseller
+            muzik
+            tarifler
+            gunler/${{ steps.hazirla.outputs.tarih }}
+
+      - name: Kapak videosu için araçlar (Playwright, ffmpeg)
+        id: araclar
+        if: steps.bot.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 8
+        run: |
+          python3 -m pip install --quiet playwright==1.63.0
+          python3 -m playwright install --with-deps chromium > /dev/null
+          command -v ffmpeg > /dev/null || (sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg > /dev/null)
+
+      - name: Kapak videosu
+        if: steps.araclar.outcome == 'success'
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          TARIH: ${{ steps.hazirla.outputs.tarih }}
+        run: |
+          if python3 bot/uretim/kapak_video.py "bot/gunler/$TARIH" --hareket 1,2,3 --denetle \
+               --cikti "$RUNNER_TEMP/kapak/kapak.mp4" > "$RUNNER_TEMP/kapak-gunluk.txt" 2>&1; then
+            ls -l "$RUNNER_TEMP/kapak/kapak.mp4" | awk '{print "Kapak videosu: " int($5/1024) " KB"}'
+            grep -o "PSNR [0-9.]* dB" "$RUNNER_TEMP/kapak-gunluk.txt" || true
+          else
+            grep -o "PSNR [0-9.]* dB" "$RUNNER_TEMP/kapak-gunluk.txt" || true
+            echo "::warning::Kapak videosu üretilemedi; gönderi resimli kapakla çıkacak (ayrıntı açık günlüğe yazılmaz)."
+            exit 1
+          fi
+
       - name: Instagram (hazırlık, prova ya da paylaşım)
         if: steps.hazirla.outputs.yayina_hazir == 'evet'
         timeout-minutes: 330
         env:
           SAYFA_ADRESI: ${{ steps.dagit.outputs.page_url }}
+          KAPAK_VIDEO: ${{ runner.temp }}/kapak/kapak.mp4
         run: python3 paylas/paylas.py yayinla
 
   stok:

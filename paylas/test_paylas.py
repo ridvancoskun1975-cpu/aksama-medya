@@ -31,6 +31,7 @@ class Sahte:
         self.davranis = {}          # "publish" / "carousel" / "kare" -> [davranış, ...]
         self.kap_durumu = {}        # kap -> status_code (varsayılan FINISHED)
         self.saat = None
+        self.yuklemeler = []        # (kap, bayt) kapak videosu yüklemeleri
         self.gunler = GECICI / "gunler"
         self.site = GECICI / "_site"
 
@@ -101,18 +102,35 @@ class Isleyici(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
         uzunluk = int(self.headers.get("Content-Length") or 0)
+        if u.path.startswith("/rupload/"):
+            # Kapak videosu doğrudan yükleme (rupload.facebook.com yerine)
+            govde = self.rfile.read(uzunluk)
+            if self.headers.get("Authorization") != "OAuth ig-anahtar":
+                return self.hata(400, 190, mesaj="Invalid OAuth access token")
+            d = S.sonraki("rupload")
+            if d == "100":
+                return self.hata(400, 100, mesaj="Invalid upload")
+            if d == "500":
+                return self.hata(500, 2, gecici=True)
+            S.yuklemeler.append((u.path.rsplit("/", 1)[-1], len(govde), self.headers.get("file_size")))
+            return self.cevap(200, {"success": True})
         q = dict(urllib.parse.parse_qsl(self.rfile.read(uzunluk).decode()))
         yol = u.path[len("/graph/"):]
         if self.headers.get("Authorization") != "Bearer ig-anahtar":
             return self.hata(400, 190, mesaj="Invalid OAuth access token")
         S.istekler.append(("POST", yol, q))
         if yol.endswith("/media"):
-            ad = "carousel" if q.get("media_type") == "CAROUSEL" else "kare"
+            ad = {"CAROUSEL": "carousel", "VIDEO": "video"}.get(q.get("media_type"), "kare")
             d = S.sonraki(ad)
             if d == "100":
                 return self.hata(400, 100, mesaj="Invalid parameter")
             if d == "500":
                 return self.hata(500, 2, gecici=True, mesaj="Service temporarily unavailable")
+            if ad == "carousel":
+                # Kaydırmalıdaki video kare yüklenmeden kullanılamaz
+                for c in q["children"].split(","):
+                    if S.kaplar.get(c, {}).get("media_type") == "VIDEO" and c not in [y[0] for y in S.yuklemeler]:
+                        return self.hata(400, 9007, 2207027, mesaj="Media not ready")
             if ad == "kare":
                 # Instagram görseli adresten çeker: adres gerçekten açılıyor mu?
                 yerel = q["image_url"].split("/pages/", 1)[1]
@@ -121,6 +139,10 @@ class Isleyici(http.server.BaseHTTPRequestHandler):
             S.kap_sayac += 1
             kid = f"kap{S.kap_sayac}"
             S.kaplar[kid] = q
+            if ad == "video":
+                if d in ("ERROR", "IN_PROGRESS"):
+                    S.kap_durumu[kid] = d
+                return self.cevap(200, {"id": kid, "uri": f"https://baska.example/ig-api-upload/v26.0/{kid}"})
             return self.cevap(200, {"id": kid})
         if yol.endswith("/media_publish"):
             d = S.sonraki("publish")
@@ -148,6 +170,7 @@ def sunucuyu_baslat():
 
 ADRES = sunucuyu_baslat()
 os.environ.update({"GRAPH_ADRESI": f"{ADRES}/graph", "GITHUB_API_URL": f"{ADRES}/gh", "IG_TOKEN": "ig-anahtar",
+                   "RUPLOAD_ADRESI": f"{ADRES}/rupload",
                    "BOT_OKUMA": "bot-anahtar", "RUNNER_TEMP": str(GECICI / "runner"), "SITE_KLASORU": str(S.site)})
 (GECICI / "runner").mkdir()
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -203,6 +226,8 @@ class PaylasimDenemesi(unittest.TestCase):
             gun_kur(BUGUN + dt.timedelta(days=i))
         self.etiketler = set()
         self.kap_kayit = {}
+        os.environ.pop("KAPAK_VIDEO", None)
+        paylas.KAPAK_VIDEOSU = True
         paylas.etiket_var = lambda t: paylas.etiket_adi(t) in self.etiketler
         paylas.etiket_koy = lambda t, m: self.etiketler.add(paylas.etiket_adi(t)) or True
         paylas.kap_oku = lambda t: self.kap_kayit.get(t.isoformat())
@@ -504,6 +529,108 @@ class PaylasimDenemesi(unittest.TestCase):
     def test_baska_tarih_prova(self):
         self.assertEqual(self.calistir(saat="20:00", girdi="prova", tarih="2026-11-21"), "tamam")
         self.assertEqual(self.ciktilar["tarih"], "2026-11-21")
+
+    # --- kapak videosu (Rıdvan 18 Kas 11:48, 12:54) ---
+    def video_kur(self, tarih=BUGUN, ozet=None, uygun=True, bayt=4096):
+        v = GECICI / "runner" / "kapak" / "kapak.mp4"
+        v.parent.mkdir(parents=True, exist_ok=True)
+        v.write_bytes(b"\x00" * bayt)
+        oz = ozet or json.loads((S.gunler / tarih.isoformat() / "paylasim.json").read_text(encoding="utf-8"))["ozet"]
+        v.with_suffix(".json").write_text(json.dumps({"uygun": uygun, "ozet": oz, "psnr": 45.4, "muzik": "Cotton Sky"}),
+                                          encoding="utf-8")
+        os.environ["KAPAK_VIDEO"] = str(v)
+        return v
+
+    def kaydirmali(self):
+        return [i[2] for i in S.ig_yazmalari() if i[1].endswith("/media") and i[2].get("media_type") == "CAROUSEL"][-1]
+
+    def test_kapak_videosu_ilk_kare_olur(self):
+        self.video_kur(bayt=5000)
+        self.assertEqual(self.calistir(saat="20:00", ayar="prova"), "tamam")
+        cocuklar = self.kaydirmali()["children"].split(",")
+        self.assertEqual(len(cocuklar), 8)                                   # video + 7 resim
+        self.assertEqual(S.kaplar[cocuklar[0]]["media_type"], "VIDEO")
+        self.assertEqual(S.kaplar[cocuklar[0]]["upload_type"], "resumable")
+        self.assertTrue(all("image_url" in S.kaplar[c] for c in cocuklar[1:]))
+        self.assertTrue(all(not S.kaplar[c]["image_url"].endswith("/01.jpg") for c in cocuklar[1:]))
+        self.assertEqual(S.yuklemeler, [(cocuklar[0], 5000, "5000")])        # doğrudan yükleme, tek kez
+        self.assertTrue(self.kap_kayit[BUGUN.isoformat()]["video"])
+        self.assertIn("müzikli video", self.gunluk)
+
+    def test_kapak_videosu_alt_metinleri_kaydirir(self):
+        gun_kur(BUGUN, alt=[f"alt {i}" for i in range(8)])
+        self.video_kur()
+        self.calistir(saat="20:00", ayar="prova")
+        resimler = [i[2] for i in S.ig_yazmalari() if i[2].get("is_carousel_item") and "image_url" in i[2]]
+        self.assertEqual([k["alt_text"] for k in resimler], [f"alt {i}" for i in range(1, 8)])
+
+    def test_kapak_videosu_yuklenemezse_resimli(self):
+        self.video_kur()
+        S.davranis["rupload"] = ["100"]
+        self.assertEqual(self.calistir(saat="20:00", ayar="prova"), "tamam")
+        cocuklar = self.kaydirmali()["children"].split(",")
+        self.assertEqual(len(cocuklar), 8)
+        self.assertTrue(all("image_url" in S.kaplar[c] for c in cocuklar))
+        self.assertFalse(self.kap_kayit[BUGUN.isoformat()]["video"])
+        self.assertIn("resimli kapak", self.gunluk)
+
+    def test_kapak_videosu_gecici_hatada_yeniden_yukler(self):
+        self.video_kur()
+        S.davranis["rupload"] = ["500"]
+        self.calistir(saat="20:00", ayar="prova")
+        cocuklar = self.kaydirmali()["children"].split(",")
+        self.assertEqual(S.kaplar[cocuklar[0]]["media_type"], "VIDEO")
+        self.assertEqual(len(S.yuklemeler), 1)
+
+    def test_kapak_videosu_islenmezse_resimli(self):
+        self.video_kur()
+        S.davranis["video"] = ["ERROR"]
+        self.assertEqual(self.calistir(saat="20:00", ayar="prova"), "tamam")
+        cocuklar = self.kaydirmali()["children"].split(",")
+        self.assertTrue(all("image_url" in S.kaplar[c] for c in cocuklar))
+        self.assertEqual(len(cocuklar), 8)
+
+    def test_kapak_videosu_bitmezse_suresinde_birakir(self):
+        self.video_kur()
+        S.davranis["video"] = ["IN_PROGRESS"]
+        bas = None
+        self.assertEqual(self.calistir(saat="20:00", ayar="prova"), "tamam")
+        self.assertTrue(all("image_url" in S.kaplar[c] for c in self.kaydirmali()["children"].split(",")))
+        self.assertLessEqual(S.saat.mono - 1000.0, paylas.VIDEO_SURESI + 120)
+
+    def test_baska_gunun_videosu_kullanilmaz(self):
+        self.video_kur(ozet="baska")
+        self.calistir(saat="20:00", ayar="prova")
+        self.assertFalse(any(i[2].get("media_type") == "VIDEO" for i in S.ig_yazmalari()))
+        self.assertEqual(S.yuklemeler, [])
+
+    def test_uygun_olmayan_video_kullanilmaz(self):
+        self.video_kur(uygun=False)
+        self.calistir(saat="20:00", ayar="prova")
+        self.assertFalse(any(i[2].get("media_type") == "VIDEO" for i in S.ig_yazmalari()))
+
+    def test_video_yoksa_resimli(self):
+        os.environ["KAPAK_VIDEO"] = str(GECICI / "runner" / "yok" / "kapak.mp4")
+        self.assertEqual(self.calistir(saat="20:00", ayar="prova"), "tamam")
+        self.assertEqual(len(self.kaydirmali()["children"].split(",")), 8)
+        self.assertIn("üretilmemiş", self.gunluk)
+
+    def test_kapatma_anahtari(self):
+        self.video_kur()
+        paylas.KAPAK_VIDEOSU = False
+        self.calistir(saat="20:00", ayar="prova")
+        self.assertFalse(any(i[2].get("media_type") == "VIDEO" for i in S.ig_yazmalari()))
+
+    def test_aksam_videolu_sabah_ayni_kabi_paylasir(self):
+        self.video_kur(tarih=BUGUN + dt.timedelta(days=1))
+        self.calistir(saat="20:00", asama="aksam")
+        self.assertTrue(self.kap_kayit[(BUGUN + dt.timedelta(days=1)).isoformat()]["video"])
+        os.environ.pop("KAPAK_VIDEO")
+        yazma = len(S.ig_yazmalari())
+        self.assertEqual(self.calistir(saat="08:15", gun=BUGUN + dt.timedelta(days=1)), "tamam")
+        yeni = S.ig_yazmalari()[yazma:]
+        self.assertEqual([i[1].rsplit("/", 1)[-1] for i in yeni], ["media_publish"])   # yalnız paylaşım
+        self.assertIn("müzikli video", self.gunluk)
 
 
 if __name__ == "__main__":
