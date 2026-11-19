@@ -71,9 +71,10 @@ jobs:
             muzik
             gunler/${{ steps.gerek.outputs.tarih }}
 
+      # 19 Kas: bu adım GitHub'ın paket sunucusu yavaşken 8 dakikayı aştı ve reel o sabah çıkmadı; süre 15 dakika.
       - name: Araçlar (Playwright, ffmpeg)
         if: steps.gerek.outputs.gerek == 'evet'
-        timeout-minutes: 8
+        timeout-minutes: 15
         run: |
           python3 -m pip install --quiet playwright==1.63.0
           python3 -m playwright install --with-deps chromium > /dev/null
