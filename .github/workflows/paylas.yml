@@ -47,7 +47,9 @@ concurrency:
 jobs:
   paylas:
     name: Paylaşım
-    if: github.repository == 'ridvancoskun1975-cpu/aksama-medya'
+    # GEÇİCİ POLİTİKA (Rıdvan 23 Kas 2026, yalnız bu proje): Instagram'a API ile paylaşım kapalı; iş başlatılsa da çalışmaz.
+    # Otomatiğe dönüş yalnız Rıdvan'ın sözüyle: aşağıdaki "false && " kısmını sil (README "Geçici politika").
+    if: false && github.repository == 'ridvancoskun1975-cpu/aksama-medya'
     runs-on: ubuntu-latest
     timeout-minutes: 350
     permissions:
