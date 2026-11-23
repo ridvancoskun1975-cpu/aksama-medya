@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# main'e doğrudan commit yok (Rıdvan 23 Kasım 2026 16:26). İş bir dalda yapılır, kapıdan geçer, yönetici main'e alır.
+# Acil arıza (Rıdvan'ın onayıyla): KAPI_ACIL=1 git commit ...
+dal=$(git symbolic-ref --short -q HEAD)
+if [ "$dal" = main ] && [ -z "${KAPI_ACIL:-}" ]; then
+  echo "main'e doğrudan commit yok. Bir dalda çalış ve kapıdan geçir: bash .claude/kapi.sh <dal>"
+  exit 1
+fi
+exit 0

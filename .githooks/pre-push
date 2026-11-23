@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# main'e yalnız kapıdan geçmiş commit gönderilir (Rıdvan 23 Kasım 2026 16:26).
+# Acil arıza (Rıdvan'ın onayıyla): KAPI_ACIL=1 git push ...
+ortak=$(git rev-parse --git-common-dir)
+sifir=0000000000000000000000000000000000000000
+while read -r yerel ysha uzak usha; do
+  [ "$uzak" = refs/heads/main ] || continue
+  if [ "$ysha" = "$sifir" ]; then echo "main silinemez"; exit 1; fi
+  if [ -n "${KAPI_ACIL:-}" ]; then echo "UYARI: KAPI_ACIL ile kapısız gönderim ($ysha)"; continue; fi
+  if [ ! -f "$ortak/kapi-gecti/$ysha" ]; then
+    echo "Bu main ($ysha) kapıdan geçmedi. Önce: bash .claude/kapi.sh <dal>, sonra git merge --ff-only <dal>."
+    exit 1
+  fi
+done
+exit 0
