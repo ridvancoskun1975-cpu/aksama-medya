@@ -10,10 +10,9 @@ Plan: claude.ai projesi "Bugün Ne Yapayım", `claude/yol-haritasi.md`. Üretim 
 - Otomatiğe dönüş adımları ve tam metin: `claude/yol-haritasi.md` "Geçici politika". Bu bölümü yalnız Rıdvan'ın sözüyle kaldır.
 
 ## Ekip düzeni (yönetici + yazılımcılar)
-- Rıdvan 23 Kasım 2026 13:40: "günlük gümüş dışında hepsinde başla." Ajanlar `.claude/agents/`, varsayılan ajan modeli `.claude/settings.json` (opus). Ortak kural: proje-calisma-duzeni becerisi, bölüm 13.
-- Büyük işte (3+ bağımsız görev, birden çok bileşen ya da yarım günden uzun iş) ana oturum Fable'da açılır ve yöneticidir. Küçük işi Opus tek başına yapar; ekip kurulmaz.
-- Yönetici: yol-haritasi.md'yi okur, işi küçük görevlere böler, ajanlara verir, sonuçları denetler, yol haritasını günceller. Kodu kendisi yazmaz (birkaç satırlık düzeltme hariç).
-- Görevler `yazilimci` (Opus) ajanına verilir; bağımsız görevler aynı anda verilebilir.
-- Her teslim `testci` (Opus) ile denenir; denenmeden "bitti" denmez.
-- `kidemli-yazilimci` (Fable) yalnız şunlarda: mimari karar, güvenlik, yeni algoritma, zor hata, Opus'un iki denemede çözemediği iş. Çağırmadan önce gerekçe tek satırla yazılır.
-- Geri alınamaz işlemler (silme, yayına alma, para, gönderme) yalnız Rıdvan onayıyla ve yöneticinin kendisi tarafından yapılır.
+- Rıdvan 23 Kasım 2026 13:40: "günlük gümüş dışında hepsinde başla." · 13:47: "bütün yeni projeler ekip ile başlamalı. benim muhattabım . yönetici olmalı. benim seçimime gerek yok yönetici aşırı risk içermeyen gerekli kararları alır rapor verir." Ajanlar `.claude/agents/`, varsayılan ajan modeli `.claude/settings.json` (opus). Ortak kural: proje-calisma-duzeni becerisi, bölüm 13.
+- Ana sohbet her zaman yöneticidir ve Rıdvan'ın muhatabıdır. Rıdvan'dan model seçimi beklenmez: yönetici sohbetin modeliyle çalışır, ajanların modelini kendisi seçer.
+- Yönetici işi böler, ajanlara verir, denetler, yol haritasını günceller ve rapor verir. Kodu kendisi yazmaz (birkaç satırlık düzeltme hariç).
+- Görevler `yazilimci` (Opus) ajanına verilir; bağımsız görevler aynı anda verilebilir. Her teslim `testci` (Opus) ile denenir; denenmeden "bitti" denmez.
+- `kidemli-yazilimci` (Fable): büyük işin planı ve mimarisi, güvenlik, yeni algoritma, zor hata, Opus'un iki denemede çözemediği iş. Çağırmadan önce gerekçe tek satırla yazılır.
+- Yönetici olağan kararları (iş bölümü, teknik yol, sıra, ajan ve model seçimi) kendisi alır, raporda bildirir ve yol haritasına "Yönetici kararı" diye yazar. Rıdvan'da kalanlar: bu dosyada Rıdvan'ın kararı ya da onayı denen konular, geçici politikalar, onaylı metinler, alarm/karar kuralı değişikliği, geri alınamaz işlemler (silme, yayına alma, para, gönderme).
