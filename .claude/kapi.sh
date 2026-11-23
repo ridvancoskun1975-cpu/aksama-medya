@@ -88,7 +88,12 @@ for yol in $degisen; do
   e=$(git show "main:$yol" | sinama_say); y=$(git show "$dal:$yol" 2>/dev/null | sinama_say)
   if [ "${y:-0}" -lt "${e:-0}" ] && [ $kuculme -eq 0 ]; then kotu "sınama sayısı azalmış: $yol $e → ${y:-0}"; fi
 done
-atlanan=$(git diff -U0 main "$dal" | grep -E '^\+' | grep -vE '^\+\+\+' | grep -cE '@Ignore|unittest\.skip|\.skip\(|@pytest\.mark\.skip|xit\(' || true)
+test_dosyalari=$(echo "$degisen" | grep -E "$test_kalip" || true)
+atlanan=0
+if [ -n "$test_dosyalari" ]; then
+  # shellcheck disable=SC2086
+  atlanan=$(git diff -U0 main "$dal" -- $test_dosyalari | grep -E '^\+' | grep -vE '^\+\+\+' | grep -cE '@Ignore|unittest\.skip|\.skip\(|@pytest\.mark\.skip|xit\(' || true)
+fi
 [ "$atlanan" -eq 0 ] || { [ $kuculme -eq 1 ] && iyi "atlanan sınama eklendi (yönetici onayladı)" || kotu "atlanan (skip) sınama eklenmiş: $atlanan yer"; }
 [ $hata -eq 0 ] && iyi "küçülme yok (+$top_ekl / -$top_sil satır)"
 
