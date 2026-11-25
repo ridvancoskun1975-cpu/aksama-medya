@@ -95,8 +95,10 @@ class Sahte:
 class ReelDeneme(unittest.TestCase):
     def setUp(self):
         self.s = s = Sahte()
-        self.eski = (P.graph, P.uyu, P.zaman, R.ham_yukle, R.etiket_yaz, R.INSTAGRAMA_PAYLAS)
+        self.eski = (P.graph, P.uyu, P.zaman, R.ham_yukle, R.etiket_yaz, R.INSTAGRAMA_PAYLAS, P.simdi)
         P.graph = s.graph
+        P.simdi = lambda: self.an                  # sahte saat: TARIH günü 10:00 (yayında yalnız bugünün reel'i)
+        self.an = dt.datetime(2026, 11, 17, 10, 0, tzinfo=R.IST)
         P.uyu = lambda sn: setattr(s, "saat", s.saat + sn)
         P.zaman = lambda: s.saat
         R.ham_yukle = s.ham_yukle
@@ -107,7 +109,7 @@ class ReelDeneme(unittest.TestCase):
         sys.argv = ["reel.py", "paylas", TARIH, str(GUN), str(VIDEO)]
 
     def tearDown(self):
-        P.graph, P.uyu, P.zaman, R.ham_yukle, R.etiket_yaz, R.INSTAGRAMA_PAYLAS = self.eski
+        P.graph, P.uyu, P.zaman, R.ham_yukle, R.etiket_yaz, R.INSTAGRAMA_PAYLAS, P.simdi = self.eski
 
     def calis(self):
         cikti = io.StringIO()
@@ -291,6 +293,31 @@ class ReelDeneme(unittest.TestCase):
                                  ("POST", "<IG>/media_publish"), ("GET", "<m>")})
         self.assertTrue(self.s.yuklemeler[0][0].startswith("https://rupload.facebook.com/ig-api-upload/v26.0/"))
 
+    def test_donus_eski_gun_yayin_kipinde_reel_paylasilmaz(self):
+        # Açık (a), kapandı: saat 10 Ara 10:00, elle tarih 16 Kas, kip yayin. Eski günün reel'i gitmez; paylas.py'deki
+        # eski gün korumasıyla aynı: iş kırmızı biter (::error::), Instagram'a hiçbir istek gitmez, etiket yazılmaz.
+        self.an = dt.datetime(2026, 12, 10, 10, 0, tzinfo=R.IST)
+        sys.argv = ["reel.py", "paylas", "2026-11-16", str(GUN), str(VIDEO)]
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 1, cikti)
+        self.assertIn("::error::Yalnız bugünün reel'i", cikti)
+        self.assertEqual(self.s.istekler, [])
+        self.assertEqual(self.s.yuklemeler, [])
+        self.assertEqual(self.s.yayinlar(), [])
+        self.assertEqual(self.s.etiketler, [])
+
+    def test_donus_eski_gun_provada_serbest(self):
+        # Prova (ve yayin dışındaki her kip) eski tarihle çalışır: kap kurulur, video yüklenir, paylaşılmaz.
+        self.an = dt.datetime(2026, 12, 10, 10, 0, tzinfo=R.IST)
+        sys.argv = ["reel.py", "paylas", "2026-11-16", str(GUN), str(VIDEO)]
+        for kip in ("prova", "kontrol"):
+            os.environ["KIP"] = kip
+            kod, cikti = self.calis()
+            self.assertEqual(kod, 0, cikti)
+        self.assertEqual(len(self.s.kaplar()), 2)
+        self.assertEqual(self.s.yayinlar(), [])
+        self.assertEqual(self.s.etiketler, [])
+
 
 class SabitSaat(dt.datetime):
     an = None
@@ -337,15 +364,38 @@ class DonusGerek(unittest.TestCase):
         self.assertEqual((c["gerek"], c["tarih"], c["kip"]), ("evet", "2026-12-10", "yayin"))
 
     def test_donus_elle_paylasilan_gun_icin_reel_yok(self):
-        # Soru 1: elle paylaşılan günlerin etiketi yok; tarih girilse de reel hazırlanmaz.
+        # Soru 1: elle paylaşılan günlerin etiketi yok; tarih girilse de reel hazırlanmaz. Yayın kipinde eski tarih
+        # zaten durur (test_donus_eski_gun_elle_tarihle_reel_yok); provada da etiket olmadığı için reel yok.
+        with self.assertRaises(P.Dur):
+            self.gerek(self.DONUS, "2026-11-24")
+        os.environ["KIP"] = "prova"
         self.assertEqual(self.gerek(self.DONUS, "2026-11-24")["gerek"], "hayir")
 
-    def test_donus_eski_gun_elle_tarihle_reel_acik(self):
-        # Soru 1 (bilinen açık): elle başlatılıp tarih girilirse gönderisi otomatik çıkmış ama reel'i çıkmamış eski gün
-        # (16 Kas) için reel bugün paylaşılabilir. Otomatik tetik tarih göndermezse (belirsiz: Google betiği) olmaz.
-        c = self.gerek(self.DONUS, "2026-11-16")
-        self.assertEqual((c["gerek"], c["tarih"]), ("evet", "2026-11-16"))
-        self.assertEqual(self.gerek(self.DONUS, "2026-11-17")["gerek"], "hayir")      # reel/2026-11-17 var
+    def test_donus_eski_gun_elle_tarihle_reel_yok(self):
+        # Açık (a), kapandı: elle başlatılıp eski tarih girilirse (gönderisi çıkmış, reel'i çıkmamış 16 Kas; saat 10 Ara
+        # 10:00) yayın kipinde iş kırmızı biter, "gerek" çıktısı yazılmaz; sonraki adımlar (video, reel, ek) çalışmaz.
+        SabitSaat.an = dt.datetime(2026, 12, 10, 10, 0, tzinfo=R.IST)
+        for tarih in ("2026-11-16", "2026-11-17"):
+            os.environ["TARIH_GIRDI"] = tarih
+            self.cikti.write_text("")
+            out = io.StringIO()
+            with redirect_stdout(out), self.assertRaises(SystemExit) as s:
+                R.calistir("gerek")
+            self.assertEqual(s.exception.code, 1)
+            self.assertIn("::error::Yalnız bugünün reel'i", out.getvalue())
+            self.assertNotIn("gerek=", self.cikti.read_text())
+        # Prova kipinde eski tarih serbest (gönderisi paylaşılmış gün için).
+        os.environ["KIP"] = "prova"
+        c = self.gerek(SabitSaat.an, "2026-11-16")
+        self.assertEqual((c["gerek"], c["tarih"], c["kip"]), ("evet", "2026-11-16", "prova"))
+
+    def test_donus_bugunun_tarihi_elle_girilirse_reel_hazirlanir(self):
+        # Koruma yalnız eski/ileri tarihi keser: bugünün tarihi elle girilirse yayın kipinde reel hazırlanır.
+        self.etiketler.add("paylasildi/2026-12-10")
+        c = self.gerek(dt.datetime(2026, 12, 10, 10, 0, tzinfo=R.IST), "2026-12-10")
+        self.assertEqual((c["gerek"], c["tarih"], c["kip"]), ("evet", "2026-12-10", "yayin"))
+        with self.assertRaises(P.Dur):
+            self.gerek(dt.datetime(2026, 12, 10, 10, 0, tzinfo=R.IST), "2026-12-11")
 
     def test_donus_sabah_penceresinde_elle_reel_yok(self):
         # Soru 3: 08:00–09:20 arasında elle reel denemesi yapılmaz (09:00 gönderisi korunur).

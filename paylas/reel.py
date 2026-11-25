@@ -45,6 +45,9 @@ REEL_DENEME = 40 * 60           # geçici hatada en çok 40 dk dener
 YUKLEME_SURESI = 300            # tek yükleme isteği en çok 5 dk
 ISLEM_BEKLE = 15 * 60           # Instagram'ın videoyu işlemesi en çok 15 dk
 KAPAK_ANI_MS = 1500             # kapak karesi: girişteki "Bugün ne yemek yapayım?" ekranı
+# Yayın kipinde yalnız bugünün reel'i (paylas/paylas.py'deki eski gün korumasıyla aynı: iş kırmızı biter).
+# Elle girilen eski tarih (ör. gönderisi çıkmış, reel'i çıkmamış bir gün) yayında reddedilir; prova serbest.
+ESKI_GUN = "Yalnız bugünün reel'i paylaşılır; başka tarih yalnız prova içindir."
 
 
 def cikti(ad, deger):
@@ -75,6 +78,8 @@ def gerek():
     if t and not re.match(r"^\d{4}-\d{2}-\d{2}$", t):
         raise SystemExit("Tarih YYYY-AA-GG olmalı.")
     tarih = t or an.date().isoformat()
+    if kip == "yayin" and tarih != an.date().isoformat():
+        raise P.Dur(ESKI_GUN)
     cikti("tarih", tarih)
     cikti("kip", kip)
     if olay == "workflow_run":
@@ -254,6 +259,8 @@ def paylas():
     if not P.TOKEN:
         raise P.Dur("IG_TOKEN yok.")
     tarih = dt.date.fromisoformat(tarih_yazi)
+    if kip == "yayin" and tarih != P.simdi().date():
+        raise P.Dur(ESKI_GUN)
     g = json.loads((gun / "gun.json").read_text(encoding="utf-8"))
     metin = aciklama(g, tebrik(video))
     ilk = P.ilk_satir(metin)
