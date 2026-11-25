@@ -126,7 +126,7 @@ class ReelDeneme(unittest.TestCase):
         self.assertEqual(prm["upload_type"], "resumable")
         self.assertNotIn("video_url", prm)            # video açık adrese konmaz (müzik lisansı)
         self.assertEqual(prm["audio_name"], "Cotton Sky")
-        self.assertEqual(prm["share_to_feed"], "true")
+        self.assertEqual(prm["share_to_feed"], "false")    # reel ana ızgaraya girmez (Rıdvan 23 Kas 12:52)
         self.assertEqual(len(self.s.yuklemeler), 1)
         adres, bayt, bas = self.s.yuklemeler[0]
         self.assertEqual(adres, YUKLEME_ADRESI + "1")
@@ -168,6 +168,7 @@ class ReelDeneme(unittest.TestCase):
         kod, cikti = self.calis()
         self.assertEqual(kod, 0, cikti)
         self.assertEqual(len(self.s.kaplar()), 1)
+        self.assertEqual(self.s.kaplar()[0][2]["share_to_feed"], "false")   # provada da ızgaraya girmez
         self.assertEqual(len(self.s.yuklemeler), 1)
         self.assertEqual(self.s.yayinlar(), [])
         self.assertEqual(self.s.etiketler, [])

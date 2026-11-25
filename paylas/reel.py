@@ -38,6 +38,9 @@ SABIT_ETIKETLER = ["#yemektarifleri", "#evyemekleri", "#kolaytarifler"]
 MARKA_ETIKETI = "#akşamanevar"
 ETIKET_EN_COK = 5
 INSTAGRAMA_PAYLAS = True        # False: reel paylaşılmaz (kapatma anahtarı; Claude depodan değiştirir)
+# Reel ana ızgaraya (Akış) girmez, yalnız Reels sekmesinde görünür (Rıdvan 23 Kas 12:52: "Reel ızgaraya girmesin
+# (önerim): uygun"). Meta (IG User Media, share_to_feed): true → Akış ve Reels sekmesi; false → yalnız Reels sekmesi.
+AKISA_PAYLAS = "false"
 REEL_DENEME = 40 * 60           # geçici hatada en çok 40 dk dener
 YUKLEME_SURESI = 300            # tek yükleme isteği en çok 5 dk
 ISLEM_BEKLE = 15 * 60           # Instagram'ın videoyu işlemesi en çok 15 dk
@@ -262,7 +265,7 @@ def paylas():
             raise P.Bitti("Bugünün reel'i Instagram'da zaten var; yeniden paylaşılmadı.")
     if not video.is_file() or video.stat().st_size == 0:
         raise P.Dur(f"Video yok: {video}")
-    prm = {"media_type": "REELS", "upload_type": "resumable", "caption": metin, "share_to_feed": "true",
+    prm = {"media_type": "REELS", "upload_type": "resumable", "caption": metin, "share_to_feed": AKISA_PAYLAS,
            "thumb_offset": str(KAPAK_ANI_MS)}
     ses = muzik_adi(video)
     if ses:
