@@ -1,6 +1,7 @@
 # aksama-medya
 
 > **GEÇİCİ POLİTİKA (Rıdvan 23 Kas 2026; yalnız bu proje; her şey düzelene kadar):** Meta 13 Kas 2026'da hesabın işletme portföyünü "kurallarımıza uymayan bir otomasyon" gerekçesiyle kısıtladı (reklam tarafı). Rıdvan 12:52: "hesabı kaybetmek veya riske atmak istemiyorum" · 12:59: "herşey düzelene kadar bu prolitika geçerli." · "dediğim gibi sonra düzelince otomatiğe alacağız." **Instagram'a API ile paylaşım kapalıdır.** Paylaşım, Reel ve Hikâye iş akışları kapalı (20 Kas) ve işlerde `if: false` kilidi var; Rıdvan'ın açık sözü olmadan açılmaz, elle çalıştırılmaz, prova yapılmaz. Paylaşımı Rıdvan telefondan elle yapar (Drive "Aksama/Elle paylaşım"). Aşağıdaki metin otomatik düzeni anlatır ve otomatiğe dönüşte yeniden geçerlidir. Dönüş adımları: `claude/yol-haritasi.md` "Geçici politika" (iş akışlarındaki `false && ` silinir, üç iş açılır, `PAYLASIM_KIPI` denetlenir, dış tetik `ELLE_DONEM = false`).
+> Adım adım dönüş listesi (kim yapar, sıra, geri alma): [`DONUS.md`](DONUS.md).
 
 Akşama Ne Var? ([@aksama.ne.var](https://www.instagram.com/aksama.ne.var/)) günlük paylaşım işi. Her sabah 09:00'da (İstanbul) günün kaydırmalı gönderisini paylaşır.
 
