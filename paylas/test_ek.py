@@ -103,10 +103,13 @@ class Deneme(unittest.TestCase):
         self.assertEqual(E.calistir(dt.datetime(2026, 11, 19, 20, 30, tzinfo=E.IST)), [])
         self.assertEqual(self.s.kaplar, [])
 
-    def test_ertesi_gun_de_paylasir(self):
+    def test_ertesi_gun_suresi_gecti(self):
+        # Yalnız ek.json'daki gün paylaşılır: ertesi gün (etiketsiz) "süresi geçti", uyarı yazılır, Instagram'a gidilmez.
         os.environ["KIP"] = "yayin"
         self.s.etiketler.add("paylasildi/2026-11-20")
-        self.assertEqual(E.calistir(dt.datetime(2026, 11, 20, 9, 30, tzinfo=E.IST)), [(AD, "paylasildi")])
+        self.assertEqual(E.calistir(dt.datetime(2026, 11, 20, 9, 30, tzinfo=E.IST)), [(AD, "suresi-gecti")])
+        self.assertEqual((self.s.kaplar, self.s.yayin), ([], []))
+        self.assertNotIn(f"ek/{AD}", self.s.etiketler)
 
     def test_instagramda_varsa_yeniden_paylasmaz(self):
         os.environ["KIP"] = "yayin"
@@ -185,13 +188,17 @@ class Deneme(unittest.TestCase):
     def test_donus_elle_gunde_ek_gitmez(self):
         # Soru 1–2: günün gönderisinin etiketi yoksa (elle paylaşılan günler) ek gönderi çıkmaz.
         os.environ["KIP"] = "yayin"
+        # 19 Kas tarihli ek gönderi 10 Ara'da zaten "süresi geçti" (test_donus_etiketsiz_eski_ek_donus_gunu_gitmez);
+        # tarihi bugün olsa da günün etiketi yoksa beklenir.
         self.s.etiketler = set()
-        self.assertEqual(E.calistir(self.DONUS), [(AD, "sabah-yok")])
+        self.assertEqual(E.calistir(self.DONUS), [(AD, "suresi-gecti")])
+        self.assertEqual(E.calistir(SABAH), [(AD, "sabah-yok")])
         self.assertEqual(self.s.kaplar, [])
 
-    def test_donus_etiketsiz_eski_ek_donus_gunu_gider(self):
-        # Soru 1 (tasarım gereği, dikkat): etiketi olmayan ek gönderi, tarihi geçmiş olsa da dönüş günü günün
-        # gönderisinden sonra bir kez gider. Instagram'da var ama son 25 paylaşımın gerisinde kaldıysa kilit 2 görmez.
+    def test_donus_etiketsiz_eski_ek_donus_gunu_gitmez(self):
+        # Açık (b), kapandı: etiketi olmayan, tarihi geçmiş ek gönderi (19 Kas) dönüş günü (10 Ara) yalnız
+        # paylasildi/<bugün> varken de gitmez. Instagram'da var ama son 25 paylaşımın gerisinde kalsa da (kilit 2
+        # görmez) tarih kuralı keser: "süresi geçti", günlüğe uyarı, iş yeşil; Instagram'a hiçbir istek gitmez.
         os.environ["KIP"] = "yayin"
         self.s.etiketler = {"paylasildi/2026-12-10"}
         metin = (E.KOK / "ek" / AD / "aciklama.txt").read_text(encoding="utf-8")
@@ -199,7 +206,45 @@ class Deneme(unittest.TestCase):
                          "timestamp": "2026-12-01T06:00:00+0000"} for i in range(25)]
         self.s.medya.append({"id": "m-tanitim", "media_type": "CAROUSEL_ALBUM", "caption": metin,
                              "timestamp": "2026-11-19T06:30:00+0000"})
-        self.assertEqual(E.calistir(self.DONUS), [(AD, "paylasildi")])
+        istekler, uyarilar = [], []
+        graph = P.graph
+        P.graph = lambda *a, **k: istekler.append(a) or graph(*a, **k)
+        P.uyari = uyarilar.append
+        self.assertEqual(E.calistir(self.DONUS), [(AD, "suresi-gecti")])
+        self.assertEqual((istekler, self.s.kaplar, self.s.yayin), ([], [], []))
+        self.assertEqual(self.s.etiketler, {"paylasildi/2026-12-10"})
+        self.assertEqual(len(uyarilar), 1)
+        self.assertIn(f"ek/{AD}", uyarilar[0])
+        self.assertIn("19.11.2026", uyarilar[0])
+        self.assertIn("süresi geçti", uyarilar[0])
+
+    def test_donus_suresi_gecmis_ek_provada_kurulur(self):
+        # Prova tarihe bakmaz (önceki davranış): tarihi geçmiş ek gönderinin kabı kurulur, paylaşılmaz.
+        os.environ["KIP"] = "prova"
+        self.s.etiketler = set()
+        self.assertEqual(E.calistir(self.DONUS), [(AD, "prova")])
+        self.assertEqual(len(self.s.kaplar), 5)
+        self.assertEqual(self.s.yayin, [])
+
+    def test_donus_suresi_gecmis_ek_is_yesil(self):
+        # Hata davranışı: süresi geçmiş ek gönderi işi kırmızıya çevirmez (vakti-yok ve sabah-yok gibi);
+        # uyarı ::warning:: olarak günlükte görünür. Ek adımı reel işinin son adımıdır; her gün kırmızı olmasın.
+        import contextlib
+        import io
+        os.environ["KIP"] = "yayin"
+        self.s.etiketler = {"paylasildi/2026-12-10"}
+        P.uyari = self.eski[5]                      # gerçek uyarı yazıcısı (::warning::)
+        cikti = io.StringIO()
+        with contextlib.redirect_stdout(cikti):
+            self.assertEqual(E.calistir(self.DONUS), [(AD, "suresi-gecti")])
+        self.assertIn("::warning::ek/" + AD, cikti.getvalue())
+        self.assertNotIn("::error::", cikti.getvalue())
+        self.assertEqual(self.s.kaplar, [])
+
+    def test_donus_tarihi_bugun_olan_etiketsiz_ek_gider(self):
+        # Kural yalnız geçmişi keser: tarihi bugün olan etiketsiz ek gönderi, günün gönderisinden sonra bir kez gider.
+        os.environ["KIP"] = "yayin"
+        self.assertEqual(E.calistir(SABAH), [(AD, "paylasildi")])
         self.assertEqual(len(self.s.yayin), 1)
 
 

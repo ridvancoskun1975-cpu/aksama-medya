@@ -10,9 +10,11 @@ ek/<ad>/: ek.json (tarih, alt_metinler), onay.json (aksama-bot'taki onayın ayn�
 Onay: karelerin ve açıklamanın özeti onay.json'dakiyle aynı olmalı (aksama-bot/uretim/ortak.py icerik_ozeti).
 Görsel adresi açık depodaki dosyanın bu kayda ait ham adresi (raw.githubusercontent.com).
 Kilitler: kayıt etiketi ek/<ad> + Instagram'daki son paylaşımlarda aynı ilk satırlı kaydırmalı gönderi.
-Yayın kipinde: tarih gelmeden, o günün sabah gönderisi (paylasildi/<bugün>) çıkmadan ve 09:20–20:00 dışında
-paylaşılmaz. Bir hata reel'i etkilemez (reel önceki adımda paylaşılmış olur); iş kırmızı biter ve ertesi
-günün reel işinde yeniden denenir.
+Yayın kipinde yalnız ek.json'daki gün (tarih) paylaşılır: o günün sabah gönderisi (paylasildi/<bugün>) çıkmadan
+ve 09:20–20:00 dışında paylaşılmaz. Tarihi geçmiş, etiketsiz ek gönderi "süresi geçti" diye atlanır, günlüğe uyarı
+yazılır, iş yeşil biter (uzun aradan sonra eski bir ek gönderi kendiliğinden çıkmasın; DONUS.md). Yeniden paylaşmak
+için ek.json'daki tarih yeni güne çekilir (onay özeti kareler ve açıklamadır, tarih onayı bozmaz). Bir hata reel'i
+etkilemez (reel önceki adımda paylaşılmış olur); iş kırmızı biter, ertesi gün tarihi geçtiği için yeniden denenmez.
 """
 import datetime as dt
 import json
@@ -120,7 +122,7 @@ def kap_kur(d, son):
 
 
 def bir_ek(klasor, kip, simdi):
-    """Döner: 'paylasildi' | 'prova' | 'onceden' | 'vakti-yok' | 'sabah-yok'."""
+    """Döner: 'paylasildi' | 'prova' | 'onceden' | 'vakti-yok' | 'suresi-gecti' | 'sabah-yok'."""
     d = oku(klasor)
     etiket = f"ek/{d['ad']}"
     ilk = P.ilk_satir(d["aciklama"])
@@ -130,6 +132,11 @@ def bir_ek(klasor, kip, simdi):
         if simdi.date() < d["tarih"]:
             ozet(f"ek/{d['ad']}: paylaşım günü {d['tarih']:%d.%m.%Y}; bugün değil.")
             return "vakti-yok"
+        if simdi.date() > d["tarih"]:
+            P.uyari(f"ek/{d['ad']}: paylaşım günü {d['tarih']:%d.%m.%Y} geçti; süresi geçti, paylaşılmadı. "
+                    "Paylaşılacaksa ek.json'daki tarih yeni güne çekilir.")
+            ozet(f"ek/{d['ad']}: süresi geçti (paylaşım günü {d['tarih']:%d.%m.%Y}); paylaşılmadı.")
+            return "suresi-gecti"
         if not H.etiket_var(f"paylasildi/{simdi.date().isoformat()}"):
             ozet(f"ek/{d['ad']}: bugünün gönderisi henüz çıkmadı; ek gönderi ondan sonra.")
             return "sabah-yok"
@@ -167,7 +174,7 @@ def calistir(simdi=None):
         ozet("Ek gönderi 08:00–09:20 arasında çalışmaz (sabah gönderisi ve reel korunur).")
         return []
     if kip == "yayin" and simdi.time() >= SAAT_SON:
-        ozet(f"Ek gönderi {SAAT_SON:%H:%M}'den sonra paylaşılmaz; ertesi gün denenir.")
+        ozet(f"Ek gönderi {SAAT_SON:%H:%M}'den sonra paylaşılmaz.")
         return []
     sonuc = []
     for k in ekler():
