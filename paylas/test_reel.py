@@ -7,8 +7,10 @@ import io
 import json
 import os
 import pathlib
+import re
 import sys
 import tempfile
+import types
 import unittest
 from contextlib import redirect_stdout
 
@@ -268,6 +270,87 @@ class ReelDeneme(unittest.TestCase):
         kod, cikti = self.calis()
         self.assertEqual(kod, 0, cikti)
         self.assertEqual(self.s.kaplar()[0][2].get("is_ai_generated"), "true")
+
+    # --- otomatiğe dönüş (DONUS.md) ---
+    def test_donus_elle_reel_ilk_satir_farkliysa_ikinci_reel_gider(self):
+        # Soru 2 (bilinen risk): Rıdvan aynı gün reel'i de elle paylaştıysa ve açıklamanın ilk satırı otomatik reel'inkiyle
+        # aynı değilse kilit 2 tutmaz, ikinci reel çıkar (aynıysa çıkmaz: test_instagramda_varsa_yeniden_paylasmaz).
+        elle = self.s.reel_kaydi("m0")
+        elle["caption"] = "Akşama ne var? Bugünün menüsü\n#akşamanevar"
+        self.s.medya.append(elle)
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 0, cikti)
+        self.assertEqual(len(self.s.yayinlar()), 1)
+
+    def test_donus_kullanilan_uclar(self):
+        # Soru 4: reel işinin Instagram'da kullandığı uçlar (+ rupload.facebook.com doğrudan yükleme).
+        kod, cikti = self.calis()
+        self.assertEqual(kod, 0, cikti)
+        uclar = {(y, re.sub(r"^(kap|m)\d+$", r"<\1>", p).replace(P.IG_ID, "<IG>")) for y, p, _ in self.s.istekler}
+        self.assertEqual(uclar, {("GET", "<IG>/media"), ("POST", "<IG>/media"), ("GET", "<kap>"),
+                                 ("POST", "<IG>/media_publish"), ("GET", "<m>")})
+        self.assertTrue(self.s.yuklemeler[0][0].startswith("https://rupload.facebook.com/ig-api-upload/v26.0/"))
+
+
+class SabitSaat(dt.datetime):
+    an = None
+
+    @classmethod
+    def now(cls, tz=None):
+        return cls.an
+
+
+class DonusGerek(unittest.TestCase):
+    """Reel işinin "gerek var mı" adımı uzun aradan sonra (DONUS.md). Etiketler GitHub'daki 25 Kas durumu:
+    paylasildi/ 16–20 Kas, reel/ 17–20 Kas; elle paylaşılan günlerde (24 Kas–) etiket yok."""
+    DONUS = dt.datetime(2026, 12, 10, 9, 25, tzinfo=R.IST)
+
+    def setUp(self):
+        self.etiketler = ({f"paylasildi/2026-11-{g}" for g in (16, 17, 18, 19, 20)}
+                          | {f"reel/2026-11-{g}" for g in (17, 18, 19, 20)})
+        self.eski = (R.etiket_var, R.dt)
+        R.etiket_var = lambda ad: ad in self.etiketler
+        R.dt = types.SimpleNamespace(datetime=SabitSaat, date=dt.date, time=dt.time, timezone=dt.timezone,
+                                     timedelta=dt.timedelta)
+        self.cikti = GECICI / "gerek-cikti.txt"
+        os.environ.update({"GITHUB_OUTPUT": str(self.cikti), "OLAY": "workflow_dispatch", "KIP": "yayin"})
+
+    def tearDown(self):
+        R.etiket_var, R.dt = self.eski
+        for ad in ("GITHUB_OUTPUT", "OLAY", "TARIH_GIRDI"):
+            os.environ.pop(ad, None)
+
+    def gerek(self, an, tarih=""):
+        SabitSaat.an = an
+        os.environ["TARIH_GIRDI"] = tarih
+        self.cikti.write_text("")
+        with redirect_stdout(io.StringIO()):
+            R.gerek()
+        return dict(s.split("=", 1) for s in self.cikti.read_text().splitlines() if "=" in s)
+
+    def test_donus_yalniz_bugun_eski_gunlere_gecmez(self):
+        # Soru 1: otomatik tetik (tarihsiz) yalnız bugüne bakar; bugünün gönderisi çıkmadan reel yok.
+        self.assertEqual(self.gerek(self.DONUS)["gerek"], "hayir")
+        # Soru 2: gönderi elle paylaşılmış ve paylaşım işinin kilit 2'si etiketi yazmışsa reel o gün hazırlanır.
+        self.etiketler.add("paylasildi/2026-12-10")
+        c = self.gerek(self.DONUS)
+        self.assertEqual((c["gerek"], c["tarih"], c["kip"]), ("evet", "2026-12-10", "yayin"))
+
+    def test_donus_elle_paylasilan_gun_icin_reel_yok(self):
+        # Soru 1: elle paylaşılan günlerin etiketi yok; tarih girilse de reel hazırlanmaz.
+        self.assertEqual(self.gerek(self.DONUS, "2026-11-24")["gerek"], "hayir")
+
+    def test_donus_eski_gun_elle_tarihle_reel_acik(self):
+        # Soru 1 (bilinen açık): elle başlatılıp tarih girilirse gönderisi otomatik çıkmış ama reel'i çıkmamış eski gün
+        # (16 Kas) için reel bugün paylaşılabilir. Otomatik tetik tarih göndermezse (belirsiz: Google betiği) olmaz.
+        c = self.gerek(self.DONUS, "2026-11-16")
+        self.assertEqual((c["gerek"], c["tarih"]), ("evet", "2026-11-16"))
+        self.assertEqual(self.gerek(self.DONUS, "2026-11-17")["gerek"], "hayir")      # reel/2026-11-17 var
+
+    def test_donus_sabah_penceresinde_elle_reel_yok(self):
+        # Soru 3: 08:00–09:20 arasında elle reel denemesi yapılmaz (09:00 gönderisi korunur).
+        self.etiketler.add("paylasildi/2026-12-10")
+        self.assertEqual(self.gerek(dt.datetime(2026, 12, 10, 8, 45, tzinfo=R.IST))["gerek"], "hayir")
 
 
 if __name__ == "__main__":
