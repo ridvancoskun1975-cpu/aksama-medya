@@ -9,6 +9,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import shutil
 import sys
 import tempfile
@@ -32,6 +33,8 @@ class Sahte:
         self.kap_durumu = {}        # kap -> status_code (varsayılan FINISHED)
         self.saat = None
         self.yuklemeler = []        # (kap, bayt) kapak videosu yüklemeleri
+        self.anahtar = {"type": "SYSTEM_USER", "is_valid": True, "expires_at": 0, "data_access_expires_at": 0,
+                        "scopes": ["instagram_basic", "instagram_content_publish"]}     # debug_token cevabı
         self.gunler = GECICI / "gunler"
         self.site = GECICI / "_site"
 
@@ -86,12 +89,11 @@ class Isleyici(http.server.BaseHTTPRequestHandler):
         if yol == "17841474308613858":
             return self.cevap(200, {"id": yol, "username": S.kullanici})
         if yol == "debug_token":
-            return self.cevap(200, {"data": {"type": "SYSTEM_USER", "is_valid": True, "expires_at": 0, "data_access_expires_at": 0,
-                                             "scopes": ["instagram_basic", "instagram_content_publish"]}})
+            return self.cevap(200, {"data": dict(S.anahtar)})
         if yol.endswith("/content_publishing_limit"):
             return self.cevap(200, {"data": [{"quota_usage": 0, "config": {"quota_total": 100}}]})
         if yol.endswith("/media"):
-            return self.cevap(200, {"data": list(reversed(S.medya))})
+            return self.cevap(200, {"data": list(reversed(S.medya))[:int(q.get("limit", 25))]})
         if yol in S.kaplar:
             return self.cevap(200, {"status_code": S.kap_durumu.get(yol, "FINISHED"), "status": "durum"})
         for m in S.medya:
@@ -631,6 +633,167 @@ class PaylasimDenemesi(unittest.TestCase):
         yeni = S.ig_yazmalari()[yazma:]
         self.assertEqual([i[1].rsplit("/", 1)[-1] for i in yeni], ["media_publish"])   # yalnız paylaşım
         self.assertIn("müzikli video", self.gunluk)
+
+    # --- otomatiğe dönüş: uzun aradan sonra (DONUS.md; yalnız sahte sunucu) ---
+    def elle_gonderi(self, gun, saat, ilk_satir=None, tur="CAROUSEL_ALBUM"):
+        """Rıdvan'ın telefondan elle paylaştığı gönderi: Instagram'da var, kayıt etiketi yok."""
+        h, m = map(int, saat.split(":"))
+        an = dt.datetime.combine(gun, dt.time(h, m), IST).astimezone(dt.timezone.utc)
+        metin = ACIKLAMA.strip() if ilk_satir is None else ilk_satir + "\n" + ACIKLAMA.split("\n", 1)[1].strip()
+        S.medya.append({"id": f"elle-{gun.isoformat()}", "caption": metin, "media_type": tur,
+                        "timestamp": an.strftime("%Y-%m-%dT%H:%M:%S+0000")})
+
+    def yalniz_yayin(self, yazma):
+        return [i[1].rsplit("/", 1)[-1] for i in S.ig_yazmalari()[yazma:]]
+
+    def test_donus_uzun_aradan_sonra_yalniz_bugun(self):
+        # Soru 1: 21 Kas'tan beri etiketsiz (otomatik paylaşılmamış) günler bekliyor; iş yalnız bugünü paylaşır,
+        # yedek saatler ve nöbetçi de eski günlere geçmez.
+        donus = dt.date(2026, 12, 10)
+        for i in range(1, 20):
+            gun_kur(donus - dt.timedelta(days=i), aciklama="ESKİ GÜN\n" + ACIKLAMA)
+        gun_kur(donus)
+        self.assertEqual(self.calistir(saat="08:20", gun=donus), "tamam")
+        self.assertEqual(self.ciktilar["tarih"], donus.isoformat())
+        self.assertEqual([m["caption"] for m in S.medya], [ACIKLAMA.strip()])
+        self.assertEqual(self.etiketler, {f"paylasildi/{donus.isoformat()}"})
+        for saat in ("09:05", "09:10", "12:05", "17:40"):
+            self.assertEqual(self.calistir(saat=saat, gun=donus)[:5], "bitti", saat)
+        self.assertEqual(len(S.yayinlar()), 1)
+
+    def test_donus_eski_gun_yayin_kipinde_paylasilamaz(self):
+        # Soru 1: tarih elle girilse de eski gün yayın kipinde paylaşılmaz; eski tarihli akşam hazırlığı yalnız kap kurar.
+        donus, eski = dt.date(2026, 12, 10), dt.date(2026, 11, 24)
+        gun_kur(donus)
+        gun_kur(eski)
+        self.assertIn("Yalnız bugünün", self.calistir(saat="10:00", girdi="yayin", tarih=eski.isoformat(), gun=donus))
+        self.assertIn("Yalnız bugünün", self.calistir(saat="10:00", tarih=eski.isoformat(), gun=donus))
+        self.assertEqual(S.ig_yazmalari(), [])
+        self.assertEqual(self.calistir(saat="20:00", asama="aksam", tarih=eski.isoformat(), gun=donus), "tamam")
+        self.assertEqual(S.yayinlar(), [])
+
+    def test_donus_gunu_elle_paylasilmissa_kilit2_durdurur(self):
+        # Soru 2: Rıdvan sabah elle paylaştı, açıklamanın ilk satırı aynı (boşluk farkı önemsiz): iş paylaşmaz ve
+        # paylasildi/<gün> yazar. Bu etiket o gün reel ve ek gönderiyi başlatır (test_reel, test_ek).
+        self.elle_gonderi(BUGUN, "07:50", ilk_satir="  Bugün ne pişireyim?   DENEME menüsü: çorba, ana yemek, yan yemek, tatlı.")
+        self.assertEqual(self.calistir(saat="08:20")[:5], "bitti")
+        self.assertEqual(S.yayinlar(), [])
+        self.assertIn("paylasildi/2026-11-20", self.etiketler)
+
+    def test_donus_gunu_elle_ilk_satir_farkliysa_cift_paylasim(self):
+        # Soru 2 (bilinen risk): elle gönderinin ilk satırı değiştirilmişse kilit 2 tutmaz, gönderi ikinci kez çıkar.
+        # Önlem kodda değil, dönüş kuralında (DONUS.md "Dönüş gününde elle paylaşım").
+        self.elle_gonderi(BUGUN, "07:50", ilk_satir="Akşama ne var? Bugünün menüsü")
+        self.assertEqual(self.calistir(saat="08:20"), "tamam")
+        self.assertEqual(len(S.yayinlar()), 1)
+        self.assertEqual(len(S.medya), 2)
+
+    def test_donus_gunu_elle_kaydirmali_degilse_cift_paylasim(self):
+        # Soru 2 (bilinen risk): kilit 2 yalnız kaydırmalıya (CAROUSEL_ALBUM) bakar; elle tek resim paylaşıldıysa tutmaz.
+        self.elle_gonderi(BUGUN, "07:50", tur="IMAGE")
+        self.assertEqual(self.calistir(saat="08:20"), "tamam")
+        self.assertEqual(len(S.medya), 2)
+
+    def test_donus_aksam_gecisi_ayni_gun_paylasmaz_ertesi_gun_bir_kez(self):
+        # Soru 2, önerilen yol: D sabahı son elle paylaşım (ilk satır aynı), D akşamı yayına geçiş. Geciken bir yedek
+        # saat (12:05 → 18:30) D'yi yeniden paylaşmaz; 20:00 hazırlığı D+1'i kurar; D+1 09:00'da tek gönderi.
+        D, D1 = BUGUN, BUGUN + dt.timedelta(days=1)
+        self.elle_gonderi(D, "08:55")
+        self.assertEqual(self.calistir(saat="18:30", gun=D)[:5], "bitti")
+        self.assertEqual(self.calistir(saat="20:00", asama="aksam", gun=D), "tamam")
+        self.assertEqual(self.calistir(saat="08:15", gun=D1), "tamam")
+        self.assertEqual(self.calistir(saat="09:05", gun=D1)[:5], "bitti")
+        self.assertEqual(len(S.yayinlar()), 1)
+        self.assertEqual([m["timestamp"][:16] for m in S.medya], ["2026-11-20T05:55", "2026-11-21T06:00"])
+
+    def test_donus_yedek_saatler_cift_paylasmaz(self):
+        # Soru 3: Google 08:15'te başlatır, 09:00'da paylaşır; GitHub yedekleri (09:05, 12:05) ve nöbetçi etiketi görüp çıkar.
+        self.assertEqual(self.calistir(saat="08:15"), "tamam")
+        for saat in ("09:05", "09:10", "12:05", "17:40"):
+            self.assertEqual(self.calistir(saat=saat)[:5], "bitti", saat)
+        self.assertEqual(len(S.yayinlar()), 1)
+
+    def test_donus_etiket_yazilamazsa_yedek_saat_kilit2_ile_durur(self):
+        # Soru 3: paylaşıldı ama kayıt etiketi yazılamadı (iş kırmızı); 09:05 yedeği gönderiyi Instagram'da bulur.
+        paylas.etiket_koy = lambda t, m: False
+        self.assertIn("kayıt etiketi yazılamadı", self.calistir(saat="08:15"))
+        paylas.etiket_koy = lambda t, m: self.etiketler.add(paylas.etiket_adi(t)) or True
+        self.assertEqual(self.calistir(saat="09:05")[:5], "bitti")
+        self.assertEqual(len(S.yayinlar()), 1)
+        self.assertIn("paylasildi/2026-11-20", self.etiketler)
+
+    def test_donus_kip_sirasi_kontrol_prova_yayin(self):
+        # Soru 3: D günü (sabah elle paylaşıldı) 09:20'den sonra elle kontrol, sonra D+1 için prova; D akşamı
+        # PAYLASIM_KIPI=yayin. Kontrol Instagram'a yazmaz, prova paylaşmaz, D+1 sabahı hazır kap bir kez paylaşılır.
+        D, D1 = BUGUN, BUGUN + dt.timedelta(days=1)
+        self.elle_gonderi(D, "08:55")
+        self.assertEqual(self.calistir(saat="09:30", girdi="kontrol", ayar="kontrol", gun=D), "tamam")
+        self.assertEqual(S.ig_yazmalari(), [])
+        self.assertEqual(self.calistir(saat="10:00", girdi="prova", ayar="kontrol", tarih=D1.isoformat(), gun=D), "tamam")
+        self.assertEqual(S.yayinlar(), [])
+        self.assertIn(D1.isoformat(), self.kap_kayit)
+        yazma = len(S.ig_yazmalari())
+        self.assertEqual(self.calistir(saat="08:15", ayar="yayin", gun=D1), "tamam")
+        self.assertEqual(self.yalniz_yayin(yazma), ["media_publish"])
+        self.assertEqual(len(S.medya), 2)
+
+    def test_donus_ayni_gun_prova_sonra_yayina_gecis_o_gun_paylasir(self):
+        # Soru 3 (dikkat): tarihsiz prova bugünün kabını kurar; aynı gün yayına geçilirse sonraki tetik (yedek saat ya
+        # da nöbetçi) o kabı hemen paylaşır. Bu yüzden dönüş günü prova D+1 tarihiyle yapılır (DONUS.md).
+        self.assertEqual(self.calistir(saat="10:00", girdi="prova", ayar="kontrol"), "tamam")
+        yazma = len(S.ig_yazmalari())
+        self.assertEqual(self.calistir(saat="12:05", ayar="yayin"), "tamam")
+        self.assertEqual(self.yalniz_yayin(yazma), ["media_publish"])
+        self.assertEqual(len(S.medya), 1)
+
+    def test_donus_prova_onayli_gun_yayinda_durur(self):
+        # Soru 3: akşam provasında geçen "yalnız prova" onaylı gün, yayına geçilen sabah hazır kap olsa da paylaşılmaz.
+        D1 = BUGUN + dt.timedelta(days=1)
+        gun_kur(D1, yalniz_prova=True)
+        self.assertEqual(self.calistir(saat="20:00", asama="aksam", ayar="prova"), "tamam")
+        self.assertIn("yalnız prova", self.calistir(saat="08:15", ayar="yayin", gun=D1))
+        self.assertEqual(S.yayinlar(), [])
+
+    def test_donus_paylasim_kipi_yazimi(self):
+        # Soru 3: PAYLASIM_KIPI tam "yayin" olmalı. Boş ya da "yayın" (ı) gibi yanlış yazım kontrole düşer: iş yeşil
+        # biter ama paylaşmaz (yalnız uyarı).
+        for ayar, kip in (("", "kontrol"), ("yayın", "kontrol"), ("Yayın", "kontrol"), ("yayim", "kontrol"),
+                          (" YAYIN ", "yayin"), ("prova", "prova"), ("yayin", "yayin")):
+            os.environ.update({"KIP_GIRDI": "otomatik", "KIP_AYARI": ayar})
+            with redirect_stdout(io.StringIO()):
+                self.assertEqual(paylas.kip_belirle()[0], kip, ayar)
+        self.assertEqual(self.calistir(saat="08:20", ayar="yayın"), "tamam")
+        self.assertEqual(self.ciktilar["kip"], "kontrol")
+        self.assertIn("tanınmadı", self.gunluk)
+        self.assertEqual(S.ig_yazmalari(), [])
+
+    def test_donus_kullanilan_uclar(self):
+        # Soru 4: yayın kipinde paylaşım işinin Instagram'da kullandığı uçların tamamı (DONUS.md "Anahtar ve izin").
+        self.video_kur()
+        self.assertEqual(self.calistir(saat="08:20"), "tamam")
+
+        def uc(i):
+            yol = re.sub(r"^medya\d+$", "<medya>", re.sub(r"^kap\d+$", "<kap>", i[1]))
+            return f"{i[0]} {yol.replace(paylas.IG_ID, '<IG>')}"
+        self.assertEqual({uc(i) for i in S.istekler}, {
+            "GET <IG>", "GET debug_token", "GET <IG>/content_publishing_limit", "POST <IG>/media",
+            "GET <kap>", "GET <IG>/media", "POST <IG>/media_publish", "GET <medya>"})
+        self.assertEqual(len(S.yuklemeler), 1)                  # + rupload (kapak videosu doğrudan yükleme)
+        turler = {i[2].get("media_type", "IMAGE") for i in S.istekler if i[:2] == ("POST", f"{paylas.IG_ID}/media")}
+        self.assertEqual(turler, {"VIDEO", "IMAGE", "CAROUSEL"})
+
+    def test_donus_anahtar_izni_ve_suresi(self):
+        # Soru 4: izin yoksa ya da anahtar geçersizse iş başlamaz; süresi 14 günden az kaldıysa uyarır.
+        S.anahtar["scopes"] = ["instagram_basic"]
+        self.assertIn("instagram_content_publish", self.calistir(saat="20:00", ayar="kontrol"))
+        S.anahtar.update(scopes=["instagram_basic", "instagram_content_publish"], is_valid=False)
+        self.assertIn("geçersiz", self.calistir(saat="20:00", ayar="kontrol"))
+        yakin = int((dt.datetime.combine(BUGUN, dt.time(20, 0), IST) + dt.timedelta(days=5)).timestamp())
+        S.anahtar.update(is_valid=True, expires_at=yakin, data_access_expires_at=yakin)
+        self.assertEqual(self.calistir(saat="20:00", ayar="kontrol"), "tamam")
+        self.assertIn("Anahtarın süresi 14 günden az", self.gunluk)
+        self.assertIn("Veri erişiminin süresi 14 günden az", self.gunluk)
+        self.assertEqual(S.ig_yazmalari(), [])
 
 
 if __name__ == "__main__":
