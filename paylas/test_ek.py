@@ -37,7 +37,7 @@ class Sahte:
             self.yayin.append(params["creation_id"])
             return {"id": "m" + params["creation_id"]}
         if yontem == "GET" and yol.endswith("/media"):
-            return {"data": self.medya}
+            return {"data": self.medya[:int((params or {}).get("limit", 25))]}
         if yontem == "GET":
             if "permalink" in (params or {}).get("fields", ""):
                 return {"permalink": "https://www.instagram.com/p/x/", "timestamp": "t"}
@@ -171,6 +171,36 @@ class Deneme(unittest.TestCase):
                 E.oku(gecici / "ek" / AD)
         finally:
             shutil.rmtree(gecici)
+
+    # --- otomatiğe dönüş (DONUS.md) ---
+    DONUS = dt.datetime(2026, 12, 10, 9, 30, tzinfo=E.IST)
+
+    def test_donus_etiketli_tanitim_yeniden_gitmez(self):
+        # Soru 1: depodaki tek ek gönderinin (ek/2026-11-tanitim) etiketi GitHub'da var (25 Kas); dönüş günü yeniden gitmez.
+        os.environ["KIP"] = "yayin"
+        self.s.etiketler |= {f"ek/{AD}", "paylasildi/2026-12-10"}
+        self.assertEqual(E.calistir(self.DONUS), [(AD, "onceden")])
+        self.assertEqual(self.s.kaplar, [])
+
+    def test_donus_elle_gunde_ek_gitmez(self):
+        # Soru 1–2: günün gönderisinin etiketi yoksa (elle paylaşılan günler) ek gönderi çıkmaz.
+        os.environ["KIP"] = "yayin"
+        self.s.etiketler = set()
+        self.assertEqual(E.calistir(self.DONUS), [(AD, "sabah-yok")])
+        self.assertEqual(self.s.kaplar, [])
+
+    def test_donus_etiketsiz_eski_ek_donus_gunu_gider(self):
+        # Soru 1 (tasarım gereği, dikkat): etiketi olmayan ek gönderi, tarihi geçmiş olsa da dönüş günü günün
+        # gönderisinden sonra bir kez gider. Instagram'da var ama son 25 paylaşımın gerisinde kaldıysa kilit 2 görmez.
+        os.environ["KIP"] = "yayin"
+        self.s.etiketler = {"paylasildi/2026-12-10"}
+        metin = (E.KOK / "ek" / AD / "aciklama.txt").read_text(encoding="utf-8")
+        self.s.medya = [{"id": f"m{i}", "media_type": "CAROUSEL_ALBUM", "caption": f"Gün {i}",
+                         "timestamp": "2026-12-01T06:00:00+0000"} for i in range(25)]
+        self.s.medya.append({"id": "m-tanitim", "media_type": "CAROUSEL_ALBUM", "caption": metin,
+                             "timestamp": "2026-11-19T06:30:00+0000"})
+        self.assertEqual(E.calistir(self.DONUS), [(AD, "paylasildi")])
+        self.assertEqual(len(self.s.yayin), 1)
 
 
 if __name__ == "__main__":

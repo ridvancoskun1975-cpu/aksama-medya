@@ -88,6 +88,14 @@ class Deneme(unittest.TestCase):
             H.calistir(AD, OGLEN)
         self.assertEqual(self.s.yayin, [])
 
+    def test_donus_paylasilmis_hikaye_yeniden_gitmez(self):
+        # Soru 1 (DONUS.md): hikâye günlük değildir, yalnız elle ve adıyla başlatılır; etiketi GitHub'da olan dosyalar
+        # (2026-11-one-cikan'ın 6'sı, 25 Kas) uzun aradan sonra da yeniden gitmez.
+        os.environ["KIP"] = "yayin"
+        self.s.etiketler |= {f"hikaye/{AD}/{p.stem}" for p in (H.KOK / "hikaye" / AD).glob("*.jpg")}
+        self.assertEqual(H.calistir(AD, dt.datetime(2026, 12, 10, 10, 0, tzinfo=H.IST)), (0, 6))
+        self.assertEqual(self.s.kaplar, [])
+
 
 if __name__ == "__main__":
     unittest.main()
