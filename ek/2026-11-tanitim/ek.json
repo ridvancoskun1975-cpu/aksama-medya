@@ -9,5 +9,5 @@
     "Her gönderide: 1. Her sabah 09:00'da akşamın menüsü: çorba, ana yemek, yan yemek, tatlı. 2. Her yemeğin kısa tarifi, adım adım. 3. Hazır alışveriş listesi: evde ne var, ne alınacak. 4. Ölçüler kaşık ve bardakla; malzeme mevsiminde. Her akşam menünüz hazır! Ayşe Hanım ve kedisi Tarçın: Kaydedin, akşam elinizin altında!",
     "Her sabah 09:00'da yeni menü. \"Bugün ne yemek yapayım?\" derdine son! Takip edin: @aksama.ne.var. Ayşe Hanım ve kedisi Tarçın: Akşamınız bizden!"
   ],
-  "_not": "Tanıtım gönderisi (Rıdvan 17 Kas 19:03 \"tanıtım uygun\"; 21:59 \"Uygun\"). tarih gününden başlayarak, o günün sabah gönderisinden ve reel'inden sonra reel işinin son adımında bir kez paylaşılır; kilit etiketi ek/<ad>. Kareler ya da açıklama değişirse onay.json'daki özet tutmaz ve paylaşılmaz."
+  "_not": "Tanıtım gönderisi (Rıdvan 17 Kas 19:03 \"tanıtım uygun\"; 21:59 \"Uygun\"). Yalnız tarih gününde, o günün sabah gönderisinden ve reel'inden sonra reel işinin son adımında bir kez paylaşılır (tarihi geçerse \"süresi geçti\" diye atlanır); kilit etiketi ek/<ad>. Kareler ya da açıklama değişirse onay.json'daki özet tutmaz ve paylaşılmaz."
 }
