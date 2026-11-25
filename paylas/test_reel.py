@@ -389,6 +389,25 @@ class DonusGerek(unittest.TestCase):
         c = self.gerek(SabitSaat.an, "2026-11-16")
         self.assertEqual((c["gerek"], c["tarih"], c["kip"]), ("evet", "2026-11-16", "prova"))
 
+    def test_reel_etiketi_varsa_ikinci_reel_hazirlanmaz(self):
+        # gerek() içindeki reel/<tarih> kilidi: yayın kipinde, bugünün tarihiyle (tarihsiz ve elle girilmiş),
+        # paylasildi/<bugün> varken reel/<bugün> de varsa reel hazırlanmaz; Instagram'a hiçbir istek gitmez.
+        an = dt.datetime(2026, 12, 10, 10, 0, tzinfo=R.IST)
+        self.etiketler |= {"paylasildi/2026-12-10", "reel/2026-12-10"}
+        istekler = []
+        eski_graph = P.graph
+        P.graph = lambda *a, **k: istekler.append(a) or {}
+        try:
+            for tarih in ("", "2026-12-10"):
+                c = self.gerek(an, tarih)
+                self.assertEqual((c["gerek"], c["tarih"], c["kip"]), ("hayir", "2026-12-10", "yayin"))
+        finally:
+            P.graph = eski_graph
+        self.assertEqual(istekler, [])
+        # Kilit yalnız kendi gününü tutar: reel/<bugün> yoksa reel hazırlanır.
+        self.etiketler.discard("reel/2026-12-10")
+        self.assertEqual(self.gerek(an)["gerek"], "evet")
+
     def test_donus_bugunun_tarihi_elle_girilirse_reel_hazirlanir(self):
         # Koruma yalnız eski/ileri tarihi keser: bugünün tarihi elle girilirse yayın kipinde reel hazırlanır.
         self.etiketler.add("paylasildi/2026-12-10")
